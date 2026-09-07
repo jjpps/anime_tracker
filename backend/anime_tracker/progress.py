@@ -8,7 +8,8 @@ def watched_by_season(history):
     """(series_id, season_number) -> conjunto de episódios concluídos."""
     watched = collections.defaultdict(set)
     for ep in history:
-        if ep["fully_watched"]:
+        # sem número de episódio não dá para dizer qual foi assistido
+        if ep["fully_watched"] and ep.get("episode_number") is not None:
             watched[(ep["series_id"], ep["season_number"])].add(ep["episode_number"])
     return watched
 

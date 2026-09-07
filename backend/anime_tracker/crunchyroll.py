@@ -77,25 +77,50 @@ class Crunchyroll:
     # --- conteúdo ---
 
     def watch_history(self, locale="en-US", page_size=100):
-        """Itera o histórico de episódios assistidos."""
-        return self._paginate("watch-history", parse_history_item, locale, page_size)
+        """Itera o histórico de episódios assistidos.
+
+        Parte dos itens vem sem `panel` (conteúdo tirado do catálogo). Eles ainda
+        trazem os ids no nível do item, então dá para recuperar pelo menos a
+        série — ignorá-los perderia ~14% do histórico."""
+        orfaos = []
+        for item in self._paginate("watch-history", dict, locale, page_size):
+            if item.get("panel"):
+                yield parse_history_item(item)
+            else:
+                orfaos.append(item)
+
+        series = self.resolve_objects(
+            [i["parent_id"] for i in orfaos if i.get("parent_type") == "series"], locale
+        )
+        for item in orfaos:
+            obj = series.get(item.get("parent_id"), {})
+            yield parse_history_item(item, series_title=obj.get("title"))
 
     def watchlist(self, locale="en-US", page_size=100):
         """Itera a watchlist. O endpoint só devolve ids, então resolvemos
         os metadados em lote via cms/objects."""
         entries = {e["id"]: e for e in self._paginate("watchlist", dict, locale, page_size)}
-        ids = list(entries)
-        for chunk in (ids[i : i + 50] for i in range(0, len(ids), 50)):
-            objects = self._get(
-                "/content/v2/cms/objects/" + ",".join(chunk),
-                params={"locale": locale, "ratings": "false"},
-            ).get("data", [])
-            for obj in objects:
-                yield parse_watchlist_item(obj, entries.pop(obj["id"], {}))
-        # ids que o cms não resolveu (conteúdo removido/fora da região) viram stub
-        # em vez de sumir calados
+        objetos = self.resolve_objects(list(entries), locale)
         for series_id, entry in entries.items():
-            yield parse_watchlist_item({"id": series_id}, entry)
+            # id que o cms não resolveu (removido/fora da região) vira stub em
+            # vez de sumir calado
+            yield parse_watchlist_item(objetos.get(series_id, {"id": series_id}), entry)
+
+    def resolve_objects(self, ids, locale="en-US", chunk_size=50):
+        """id -> objeto do catálogo, em lote. Ids removidos simplesmente faltam."""
+        ids = [i for i in dict.fromkeys(ids) if i]
+        out = {}
+        for i in range(0, len(ids), chunk_size):
+            chunk = ids[i : i + chunk_size]
+            try:
+                data = self._get(
+                    "/content/v2/cms/objects/" + ",".join(chunk),
+                    params={"locale": locale, "ratings": "false"},
+                ).get("data", [])
+            except CrunchyrollError:
+                continue  # lote inteiro fora do catálogo
+            out.update({obj["id"]: obj for obj in data})
+        return out
 
     def seasons(self, series_id, locale="en-US", with_years=True):
         """Temporadas de uma série, com contagem de episódios e faixa de anos.
@@ -148,16 +173,20 @@ class Crunchyroll:
         return resp.json()
 
 
-def parse_history_item(item: dict) -> dict:
-    """Achata um item do watch-history nos campos que interessam."""
+def parse_history_item(item: dict, series_title=None) -> dict:
+    """Achata um item do watch-history nos campos que interessam.
+
+    Sem panel não há como saber temporada e episódio: ficam None em vez de
+    virarem T1E0, que contaria como episódio assistido que nunca existiu."""
     panel = item.get("panel") or {}
     meta = panel.get("episode_metadata", {})
+    pai = item.get("parent_id", "") if item.get("parent_type") == "series" else ""
     return {
-        "series_id": meta.get("series_id") or panel.get("id", ""),
-        "series_title": meta.get("series_title") or panel.get("title", "unknown"),
-        "season_number": _num(meta.get("season_number"), int, 1),
-        "episode_number": _num(meta.get("episode_number"), float, 0.0),
-        "episode_id": panel.get("id", ""),
+        "series_id": meta.get("series_id") or pai or panel.get("id", ""),
+        "series_title": meta.get("series_title") or panel.get("title") or series_title or "unknown",
+        "season_number": _num(meta.get("season_number"), int, 1) if panel else None,
+        "episode_number": _num(meta.get("episode_number"), float, 0.0) if panel else None,
+        "episode_id": panel.get("id") or item.get("id", ""),
         "episode_title": panel.get("title", ""),
         "watched_at": item.get("date_played"),
         "fully_watched": item.get("fully_watched", False),
@@ -213,6 +242,18 @@ if __name__ == "__main__":
 
     junk = parse_history_item({"panel": {"episode_metadata": {"season_number": "n/a"}}})
     assert junk["season_number"] == 1
+
+    # item sem panel: os ids ficam no nível do item e não podem ser perdidos
+    sem_panel = parse_history_item(
+        {"id": "GYNVQMDGR", "parent_id": "G6GG91P26", "parent_type": "series",
+         "date_played": "2025-11-16T14:55:32Z", "fully_watched": True},
+        series_title="Food Wars!",
+    )
+    assert sem_panel["episode_id"] == "GYNVQMDGR"
+    assert sem_panel["series_id"] == "G6GG91P26"
+    assert sem_panel["series_title"] == "Food Wars!"
+    # sem panel não se inventa posição: T1E0 viraria episódio assistido fantasma
+    assert sem_panel["season_number"] is None and sem_panel["episode_number"] is None
 
     wl = parse_watchlist_item(
         {
