@@ -10,7 +10,11 @@ db:  ## baixa o catálogo local do AniList (casa temporadas sem a API)
 test:
 	cd $(BACKEND) && $(PY) tests/test_anilist.py
 	cd $(BACKEND) && $(PY) tests/test_db.py
+	cd $(BACKEND) && $(PY) tests/test_server.py
 	cd $(BACKEND) && $(PY) anime_tracker/crunchyroll.py
+
+serve:
+	cd $(BACKEND) && $(PY) -m anime_tracker serve
 
 sync:
 	cd $(BACKEND) && $(PY) -m anime_tracker sync
@@ -18,4 +22,4 @@ sync:
 match:
 	cd $(BACKEND) && $(PY) -m anime_tracker match $(ARGS)
 
-.PHONY: db test sync match
+.PHONY: db test sync match serve

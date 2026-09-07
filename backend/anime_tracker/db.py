@@ -59,6 +59,12 @@ CREATE TABLE IF NOT EXISTS matches (
 );
 CREATE INDEX IF NOT EXISTS idx_matches_status ON matches(review_status);
 
+CREATE TABLE IF NOT EXISTS settings (
+    key    TEXT PRIMARY KEY,
+    value  TEXT,
+    saved_at TEXT NOT NULL
+);
+
 -- as duas faces do que o usuário pediu separar
 CREATE VIEW IF NOT EXISTS v_pending_review AS
 SELECT m.*, s.series_id, s.season_number, s.title AS season_title,
@@ -226,6 +232,20 @@ def stats(conn):
              (SELECT COUNT(*) FROM matches WHERE review_status = 'rejected')      AS rejected"""
     ).fetchone()
     return dict(linha)
+
+
+def get_setting(conn, key, default=None):
+    linha = conn.execute("SELECT value FROM settings WHERE key = ?", [key]).fetchone()
+    return linha["value"] if linha else default
+
+
+def set_setting(conn, key, value):
+    conn.execute(
+        """INSERT INTO settings (key, value, saved_at) VALUES (?, ?, ?)
+           ON CONFLICT(key) DO UPDATE SET value=excluded.value, saved_at=excluded.saved_at""",
+        [key, value, agora()],
+    )
+    conn.commit()
 
 
 def seasons_of(conn, series_id):

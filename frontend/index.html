@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>anime tracker</title>
+<style>
+  :root {
+    --bg: #14161a; --card: #1c1f26; --linha: #262a33;
+    --texto: #e6e8ec; --fraco: #8b93a1;
+    --ok: #4ade80; --alerta: #fbbf24; --erro: #f87171; --acento: #60a5fa;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--texto);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 16px 24px; border-bottom: 1px solid var(--linha);
+  }
+  h1 { font-size: 17px; margin: 0; font-weight: 600; }
+  nav { display: flex; gap: 4px; margin-left: 8px; }
+  nav button {
+    background: none; border: 0; color: var(--fraco); cursor: pointer;
+    padding: 8px 14px; border-radius: 6px; font-size: 14px;
+  }
+  nav button.ativo { background: var(--card); color: var(--texto); }
+  #resumo { margin-left: auto; color: var(--fraco); font-size: 13px; }
+  main { padding: 20px 24px; max-width: 1100px; }
+  #busca {
+    width: 100%; max-width: 380px; padding: 8px 12px; margin-bottom: 16px;
+    background: var(--card); border: 1px solid var(--linha);
+    border-radius: 6px; color: var(--texto); font-size: 14px;
+  }
+  .item {
+    background: var(--card); border: 1px solid var(--linha); border-radius: 8px;
+    padding: 12px 14px; margin-bottom: 8px;
+    display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+  }
+  .dados { flex: 1; min-width: 260px; }
+  .titulo { font-weight: 600; }
+  .alvo { color: var(--fraco); font-size: 13px; margin-top: 2px; }
+  .alvo a { color: var(--acento); text-decoration: none; }
+  .alvo a:hover { text-decoration: underline; }
+  .sem-match { color: var(--erro); }
+  .chip {
+    font-size: 12px; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--linha); color: var(--fraco); white-space: nowrap;
+  }
+  .chip.confirmed { color: var(--ok); border-color: var(--ok); }
+  .chip.rejected { color: var(--erro); border-color: var(--erro); }
+  .chip.dup { color: var(--alerta); border-color: var(--alerta); }
+  .acoes { display: flex; gap: 6px; align-items: center; }
+  .acoes button {
+    padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px;
+    border: 1px solid var(--linha); background: #232733; color: var(--texto);
+  }
+  .acoes button:hover { border-color: var(--acento); }
+  .acoes button:disabled { opacity: .5; cursor: default; }
+  .acoes input {
+    width: 92px; padding: 6px 8px; font-size: 13px;
+    background: var(--bg); border: 1px solid var(--linha);
+    border-radius: 6px; color: var(--texto);
+  }
+  .vazio, .carregando { color: var(--fraco); padding: 32px 0; }
+  #conectar {
+    padding: 6px 12px; border-radius: 6px; text-decoration: none;
+    font-size: 13px; border: 1px solid var(--linha); color: var(--texto);
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>anime tracker</h1>
+  <nav>
+    <button id="tab-catalog" class="ativo">Catálogo sincronizado</button>
+    <button id="tab-pending">Catálogo a revisar</button>
+  </nav>
+  <span id="resumo"></span>
+  <a id="conectar" href="/auth/anilist">Conectar AniList</a>
+</header>
+
+<main>
+  <input id="busca" placeholder="filtrar por série...">
+  <div id="lista" class="carregando">carregando...</div>
+</main>
+
+<script>
+const estado = { aba: "catalog", q: "" };
+const $ = (id) => document.getElementById(id);
+
+const rota = () => estado.aba === "catalog" ? "/api/catalog" : "/api/pending";
+
+async function carregar() {
+  $("lista").className = "carregando";
+  $("lista").textContent = "carregando...";
+  try {
+    const resp = await fetch(rota() + "?q=" + encodeURIComponent(estado.q));
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    render(await resp.json());
+  } catch (e) {
+    $("lista").className = "vazio";
+    $("lista").textContent = "falha ao carregar: " + e.message;
+  }
+}
+
+function render(itens) {
+  const lista = $("lista");
+  lista.className = "";
+  if (!itens.length) {
+    lista.className = "vazio";
+    lista.textContent = estado.aba === "catalog"
+      ? "nada revisado ainda — comece pela aba a revisar"
+      : "nada pendente";
+    return;
+  }
+  lista.replaceChildren(...itens.map(criarItem));
+}
+
+function criarItem(r) {
+  const div = document.createElement("div");
+  div.className = "item";
+
+  const dados = document.createElement("div");
+  dados.className = "dados";
+
+  const titulo = document.createElement("div");
+  titulo.className = "titulo";
+  titulo.textContent = `${r.series_title} — T${r.season_number} (${r.cr_episodes} eps)`;
+  dados.append(titulo);
+
+  const alvo = document.createElement("div");
+  alvo.className = "alvo";
+  if (r.anilist_id) {
+    alvo.append("→ ");
+    const link = document.createElement("a");
+    link.href = r.anilist_url || `https://anilist.co/anime/${r.anilist_id}`;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = r.anilist_title || `#${r.anilist_id}`;
+    alvo.append(link, ` (${r.anilist_episodes ?? "?"} eps) · conf ${r.confidence.toFixed(2)}`);
+  } else {
+    alvo.className += " sem-match";
+    alvo.textContent = "sem correspondência no AniList";
+  }
+  dados.append(alvo);
+  div.append(dados);
+
+  if (r.duplicate_of !== null && r.duplicate_of !== undefined) {
+    div.append(chip("dup", `mesma obra da T${r.duplicate_of}`));
+  }
+
+  if (estado.aba === "catalog") {
+    div.append(chip(r.review_status, r.review_status === "confirmed" ? "confirmado" : "rejeitado"));
+    div.append(acoes(r, [["Reabrir", "pending"]]));
+  } else {
+    div.append(acoes(r, [["Confirmar", "confirmed"], ["Rejeitar", "rejected"]], true));
+  }
+  return div;
+}
+
+function chip(classe, texto) {
+  const s = document.createElement("span");
+  s.className = "chip " + classe;
+  s.textContent = texto;
+  return s;
+}
+
+function acoes(r, botoes, comCorrecao) {
+  const box = document.createElement("div");
+  box.className = "acoes";
+
+  let campo;
+  if (comCorrecao) {
+    campo = document.createElement("input");
+    campo.placeholder = "anilist id";
+    campo.title = "corrigir o id do AniList ao confirmar";
+    box.append(campo);
+  }
+
+  for (const [rotulo, status] of botoes) {
+    const b = document.createElement("button");
+    b.textContent = rotulo;
+    b.onclick = async () => {
+      box.querySelectorAll("button").forEach((x) => (x.disabled = true));
+      const corpo = { status };
+      // o id digitado corrige o alvo junto com a confirmação
+      if (campo && campo.value.trim()) corpo.anilist_id = campo.value.trim();
+      try {
+        const resp = await fetch("/api/review/" + encodeURIComponent(r.season_id), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(corpo),
+        });
+        if (!resp.ok) throw new Error((await resp.json()).erro || "HTTP " + resp.status);
+        await Promise.all([carregar(), resumo()]);
+      } catch (e) {
+        alert("não foi possível salvar: " + e.message);
+        box.querySelectorAll("button").forEach((x) => (x.disabled = false));
+      }
+    };
+    box.append(b);
+  }
+  return box;
+}
+
+async function resumo() {
+  try {
+    const s = await (await fetch("/api/stats")).json();
+    $("resumo").textContent =
+      `${s.series} séries · ${s.seasons} temporadas · ${s.confirmed} confirmados · ${s.pending} a revisar`;
+    const conectado = s.anilist_conectado;
+    $("conectar").textContent = conectado ? "AniList conectado" : "Conectar AniList";
+    $("conectar").style.color = conectado ? "var(--ok)" : "";
+  } catch { /* o resumo é acessório; a lista é o que importa */ }
+}
+
+for (const aba of ["catalog", "pending"]) {
+  $("tab-" + aba).onclick = () => {
+    estado.aba = aba;
+    $("tab-catalog").classList.toggle("ativo", aba === "catalog");
+    $("tab-pending").classList.toggle("ativo", aba === "pending");
+    carregar();
+  };
+}
+
+let debounce;
+$("busca").oninput = (e) => {
+  estado.q = e.target.value;
+  clearTimeout(debounce);
+  debounce = setTimeout(carregar, 250);
+};
+
+resumo();
+carregar();
+</script>
+</body>
+</html>

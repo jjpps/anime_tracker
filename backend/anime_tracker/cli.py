@@ -7,6 +7,7 @@
     python -m anime_tracker review confirm <season_id>
     python -m anime_tracker pending         # o que falta assistir
     python -m anime_tracker stats
+    python -m anime_tracker serve           # frontend + API em localhost:8000
 """
 
 import argparse
@@ -140,6 +141,13 @@ def cmd_pending(args, conn):
             print(f"  {rotulo}: {t['watched']}/{t['total_episodes']} — faltam {falta} ({marca})")
 
 
+def cmd_serve(args, conn):
+    from .server import create_app
+
+    conn.close()  # o servidor abre a própria conexão por request
+    create_app(args.db).run(host=args.host, port=args.port, debug=args.debug)
+
+
 def cmd_stats(args, conn):
     s = db.stats(conn)
     print(f"séries {s['series']} | temporadas {s['seasons']} | episódios {s['episodes']}")
@@ -169,11 +177,16 @@ def main(argv=None):
 
     sub.add_parser("stats", help="resumo do banco")
 
+    p = sub.add_parser("serve", help="sobe o frontend e a API")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8000)
+    p.add_argument("--debug", action="store_true")
+
     args = parser.parse_args(argv)
     conn = db.connect(args.db)
     try:
         {"sync": cmd_sync, "match": cmd_match, "review": cmd_review,
-         "pending": cmd_pending, "stats": cmd_stats}[args.cmd](args, conn)
+         "pending": cmd_pending, "stats": cmd_stats, "serve": cmd_serve}[args.cmd](args, conn)
     finally:
         conn.close()
 

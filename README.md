@@ -14,12 +14,15 @@ backend/
     db.py            schema e acesso ao SQLite
     cli.py           comandos
   tests/
-frontend/            (ainda não existe)
+    oauth.py         OAuth do AniList (authorization code + callback)
+    server.py        Flask: frontend, API de revisão e callback
+  tests/
+frontend/
+  index.html         dois menus: catálogo sincronizado e catálogo a revisar
 ```
 
-O backend não expõe HTTP ainda: o CLI e o banco são a interface. Quando o
-frontend entrar, `db.py` é a camada que ele consome — nenhuma regra de negócio
-vive no `cli.py`.
+Nenhuma regra de negócio vive em `cli.py` nem em `server.py`: os dois leem de
+`db.py`. O frontend é HTML e JS puros, sem build.
 
 ## Uso
 
@@ -33,7 +36,25 @@ make match ARGS=--offline      # casa temporadas; sem --offline usa a API
 make test
 ```
 
-Comandos: `sync`, `match`, `review [list|done|confirm|reject]`, `pending`, `stats`.
+make serve                     # http://localhost:8000
+```
+
+Comandos: `sync`, `match`, `review [list|done|confirm|reject]`, `pending`,
+`stats`, `serve`.
+
+## AniList OAuth
+
+Em anilist.co/settings/developer, crie uma aplicação com a Redirect URL
+`http://localhost:8000/auth/anilist/callback` e exporte:
+
+```bash
+export ANILIST_CLIENT_ID=...
+export ANILIST_CLIENT_SECRET=...
+```
+
+Depois "Conectar AniList" no topo da página. O token vale 1 ano, não há refresh
+token e não há scopes — ele dá acesso quase total à conta e fica no SQLite, que
+por isso está no .gitignore.
 
 ### Como obter o etp_rt
 
@@ -46,4 +67,5 @@ Logado em crunchyroll.com: DevTools → Application → Cookies → copiar `etp_
 - AniList: cliente escrito, **sem validação ao vivo** — a API está retornando
   403 ("temporarily disabled"). O matcher foi calibrado contra o catálogo local,
   que traz os mesmos IDs.
-- Escrita na lista do AniList (OAuth): não implementada.
+- OAuth: implementado, **sem validação ao vivo** pelo mesmo 403.
+- Escrita na lista do AniList: não implementada.
