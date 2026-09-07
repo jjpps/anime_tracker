@@ -97,6 +97,19 @@ class Crunchyroll:
         for series_id, entry in entries.items():
             yield parse_watchlist_item({"id": series_id}, entry)
 
+    def seasons(self, series_id, locale="en-US"):
+        """Temporadas de uma série, com a contagem oficial de episódios."""
+        data = self._get(f"/content/v2/cms/series/{series_id}/seasons",
+                         params={"locale": locale}).get("data", [])
+        return [
+            {
+                "season_number": _num(s.get("season_number"), int, 0),
+                "season_title": s.get("title", ""),
+                "total_episodes": _num(s.get("number_of_episodes"), int, 0),
+            }
+            for s in data
+        ]
+
     def _paginate(self, endpoint, parse, locale, page_size):
         page = 1
         while True:
