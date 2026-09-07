@@ -2,8 +2,9 @@
 
 Uso:
     export CR_ETP_RT="<cookie etp_rt>"
-    python main.py history > history.json
-    python main.py watchlist > watchlist.json
+    python main.py > crunchyroll.json     # os dois
+    python main.py history                # só o histórico
+    python main.py watchlist              # só a watchlist
 """
 
 import json
@@ -17,6 +18,15 @@ if not etp_rt:
     sys.exit("defina CR_ETP_RT com o cookie etp_rt do crunchyroll.com")
 
 cr = Crunchyroll().login(etp_rt)
-what = sys.argv[1] if len(sys.argv) > 1 else "history"
-source = cr.watchlist() if what == "watchlist" else cr.watch_history()
-json.dump(list(source), sys.stdout, ensure_ascii=False, indent=2)
+what = sys.argv[1] if len(sys.argv) > 1 else "all"
+out = {}
+if what in ("all", "history"):
+    out["history"] = list(cr.watch_history())
+if what in ("all", "watchlist"):
+    out["watchlist"] = list(cr.watchlist())
+if not out:
+    sys.exit(f"argumento inválido: {what!r} (use history, watchlist ou nada)")
+
+print(f"{len(out.get('history', []))} episódios, {len(out.get('watchlist', []))} séries",
+      file=sys.stderr)
+json.dump(out, sys.stdout, ensure_ascii=False, indent=2)
