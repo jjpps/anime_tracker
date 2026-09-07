@@ -116,8 +116,12 @@ def candidate_titles(media):
     return [t for t in (*titulos.values(), *(media.get("synonyms") or [])) if t]
 
 
-def score(query, media, episodes=0):
-    """0..1. Similaridade do melhor título, com bônus se a contagem de eps bate."""
+def score(query, media, episodes=0, years=None):
+    """Similaridade de título ajustada por episódios e ano de exibição.
+
+    Pode passar de 1.0 de propósito: com títulos idênticos (T1 vs T3 da mesma
+    série) o texto satura e só os ajustes separam. O teto é aplicado depois,
+    ao reportar a confiança."""
     if media.get("format") in IGNORED_FORMATS:
         return 0.0
     alvo = normalize(query)
@@ -126,25 +130,23 @@ def score(query, media, episodes=0):
         default=0.0,
     )
     if episodes and media.get("episodes") == episodes:
-        melhor = min(1.0, melhor + 0.10)
+        melhor += 0.10
+    ano = media.get("seasonYear")
+    if years and ano:
+        # fora da janela de exibição da temporada é quase certo ser outra cour
+        melhor += 0.05 if years[0] <= ano <= years[1] else -0.25
     return melhor
 
 
-def best_match(query, candidatos, episodes=0):
-    """Melhor candidato acima do limiar, ou None. Devolve (media, score).
-
-    A contagem de episódios entra como critério separado, não só como bônus:
-    com títulos idênticos o score satura em 1.0 e o bônus sumiria no teto."""
+def best_match(query, candidatos, episodes=0, years=None):
+    """Melhor candidato acima do limiar, ou None. Devolve (media, score cru)."""
     ranking = sorted(
-        (
-            (c, score(query, c, episodes), bool(episodes) and c.get("episodes") == episodes)
-            for c in candidatos
-        ),
-        key=lambda t: (t[1], t[2]),
+        ((c, score(query, c, episodes, years)) for c in candidatos),
+        key=lambda par: par[1],
         reverse=True,
     )
-    if ranking and ranking[0][1] >= THRESHOLD:
-        return ranking[0][:2]
+    if ranking and min(1.0, ranking[0][1]) >= THRESHOLD:
+        return ranking[0]
     return None
 
 
@@ -175,10 +177,12 @@ def match_seasons(client, series_title, seasons):
     for season in seasons:
         melhor = None
         for query in season_queries(series_title, season):
-            achado = best_match(query, resultados.get(query, []), season.get("total_episodes", 0))
+            achado = best_match(query, resultados.get(query, []),
+                                season.get("total_episodes", 0), season.get("years"))
             if achado and (melhor is None or achado[1] > melhor[1]):
                 melhor = achado
         media, conf = melhor if melhor else (None, 0.0)
+        conf = min(1.0, conf)
         saida.append({
             "season_number": season.get("season_number"),
             "season_title": season.get("season_title"),
@@ -191,7 +195,27 @@ def match_seasons(client, series_title, seasons):
             # abaixo do limiar nada é gravado como certo; fica para revisão manual
             "needs_review": conf < 0.9,
         })
-    return saida
+    return flag_duplicates(saida)
+
+
+def flag_duplicates(seasons):
+    """Duas temporadas da CR apontando para a mesma obra = uma delas está errada.
+
+    Acontece quando a CR junta duas cours numa temporada só. Mantém a de maior
+    confiança e manda a outra para revisão em vez de afirmar as duas."""
+    melhor_por_id = {}
+    for s in seasons:
+        aid = s["anilist_id"]
+        if aid is None:
+            continue
+        if aid not in melhor_por_id or s["confidence"] > melhor_por_id[aid]["confidence"]:
+            melhor_por_id[aid] = s
+    for s in seasons:
+        aid = s["anilist_id"]
+        if aid is not None and melhor_por_id[aid] is not s:
+            s["needs_review"] = True
+            s["duplicate_of"] = melhor_por_id[aid]["season_number"]
+    return seasons
 
 
 def main():

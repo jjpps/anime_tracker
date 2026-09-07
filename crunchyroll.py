@@ -97,18 +97,37 @@ class Crunchyroll:
         for series_id, entry in entries.items():
             yield parse_watchlist_item({"id": series_id}, entry)
 
-    def seasons(self, series_id, locale="en-US"):
-        """Temporadas de uma série, com a contagem oficial de episódios."""
+    def seasons(self, series_id, locale="en-US", with_years=True):
+        """Temporadas de uma série, com contagem de episódios e faixa de anos.
+
+        Os anos custam uma chamada por temporada, mas são o que separa uma
+        temporada da outra quando o título é idêntico — a CR junta em uma
+        temporada o que outros catálogos quebram em duas."""
         data = self._get(f"/content/v2/cms/series/{series_id}/seasons",
                          params={"locale": locale}).get("data", [])
-        return [
-            {
+        out = []
+        for s in data:
+            season = {
+                "season_id": s.get("id", ""),
                 "season_number": _num(s.get("season_number"), int, 0),
                 "season_title": s.get("title", ""),
                 "total_episodes": _num(s.get("number_of_episodes"), int, 0),
+                "years": None,
             }
-            for s in data
-        ]
+            if with_years:
+                season["years"] = self.season_years(season["season_id"], locale)
+            out.append(season)
+        return out
+
+    def season_years(self, season_id, locale="en-US"):
+        """(primeiro ano, último ano) de exibição, ou None se a CR não informa."""
+        episodes = self._get(f"/content/v2/cms/seasons/{season_id}/episodes",
+                             params={"locale": locale}).get("data", [])
+        anos = sorted(
+            _num((e.get("episode_air_date") or "")[:4], int, 0) for e in episodes
+        )
+        anos = [a for a in anos if a]
+        return (anos[0], anos[-1]) if anos else None
 
     def _paginate(self, endpoint, parse, locale, page_size):
         page = 1
