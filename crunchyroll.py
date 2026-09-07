@@ -81,8 +81,21 @@ class Crunchyroll:
         return self._paginate("watch-history", parse_history_item, locale, page_size)
 
     def watchlist(self, locale="en-US", page_size=100):
-        """Itera a lista de animes salvos (watchlist)."""
-        return self._paginate("watchlist", parse_watchlist_item, locale, page_size)
+        """Itera a watchlist. O endpoint só devolve ids, então resolvemos
+        os metadados em lote via cms/objects."""
+        entries = {e["id"]: e for e in self._paginate("watchlist", dict, locale, page_size)}
+        ids = list(entries)
+        for chunk in (ids[i : i + 50] for i in range(0, len(ids), 50)):
+            objects = self._get(
+                "/content/v2/cms/objects/" + ",".join(chunk),
+                params={"locale": locale, "ratings": "false"},
+            ).get("data", [])
+            for obj in objects:
+                yield parse_watchlist_item(obj, entries.pop(obj["id"], {}))
+        # ids que o cms não resolveu (conteúdo removido/fora da região) viram stub
+        # em vez de sumir calados
+        for series_id, entry in entries.items():
+            yield parse_watchlist_item({"id": series_id}, entry)
 
     def _paginate(self, endpoint, parse, locale, page_size):
         page = 1
@@ -91,7 +104,7 @@ class Crunchyroll:
                 f"/content/v2/{self.account_id}/{endpoint}",
                 params={"page": page, "page_size": page_size, "locale": locale},
             ).get("data", [])
-            yield from (parse(i) for i in items if i.get("panel"))
+            yield from (parse(i) for i in items)
             if len(items) < page_size:
                 return
             page += 1
@@ -105,7 +118,7 @@ class Crunchyroll:
 
 def parse_history_item(item: dict) -> dict:
     """Achata um item do watch-history nos campos que interessam."""
-    panel = item["panel"]
+    panel = item.get("panel") or {}
     meta = panel.get("episode_metadata", {})
     return {
         "series_id": meta.get("series_id") or panel.get("id", ""),
@@ -119,19 +132,18 @@ def parse_history_item(item: dict) -> dict:
     }
 
 
-def parse_watchlist_item(item: dict) -> dict:
-    """Achata um item da watchlist. O panel aqui é a série, não o episódio."""
-    panel = item["panel"]
-    meta = panel.get("series_metadata", {})
+def parse_watchlist_item(obj: dict, entry: dict) -> dict:
+    """Junta o objeto da série (cms/objects) com a entrada da watchlist."""
+    meta = obj.get("series_metadata", {})
     return {
-        "series_id": panel.get("id", ""),
-        "series_title": panel.get("title", "unknown"),
+        "series_id": obj.get("id", ""),
+        "series_title": obj.get("title", "unknown"),
         "total_episodes": _num(meta.get("episode_count"), int, 0),
         "total_seasons": _num(meta.get("season_count"), int, 0),
-        "added_at": item.get("date_added"),
-        "is_favorite": item.get("is_favorite", False),
-        "never_watched": item.get("never_watched", False),
-        "fully_watched": item.get("fully_watched", False),
+        # séries fora da região voltam com contagem zerada — vale saber por quê
+        "availability": meta.get("availability_status", "unknown"),
+        "added_at": entry.get("date_added"),
+        "is_favorite": entry.get("is_favorite", False),
     }
 
 
@@ -172,18 +184,17 @@ if __name__ == "__main__":
 
     wl = parse_watchlist_item(
         {
-            "panel": {
-                "id": "GY5P48XEY",
-                "title": "Frieren",
-                "series_metadata": {"episode_count": 28, "season_count": 1},
-            },
-            "date_added": "2026-01-01T00:00:00Z",
-            "is_favorite": True,
-        }
+            "id": "GY5P48XEY",
+            "title": "Frieren",
+            "series_metadata": {"episode_count": 28, "season_count": 1},
+        },
+        {"date_added": "2026-01-01T00:00:00Z", "is_favorite": True},
     )
     assert wl["series_id"] == "GY5P48XEY" and wl["total_episodes"] == 28
-    assert wl["is_favorite"] is True and wl["never_watched"] is False
+    assert wl["is_favorite"] is True and wl["added_at"].startswith("2026")
 
-    bare = parse_watchlist_item({"panel": {"id": "X"}})
+    bare = parse_watchlist_item({"id": "X"}, {})
     assert bare["series_title"] == "unknown" and bare["total_episodes"] == 0
+    assert bare["added_at"] is None and bare["is_favorite"] is False
+    assert bare["availability"] == "unknown"
     print("ok")
