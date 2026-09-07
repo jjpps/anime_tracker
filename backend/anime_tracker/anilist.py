@@ -184,6 +184,9 @@ def match_seasons(client, series_title, seasons):
         media, conf = melhor if melhor else (None, 0.0)
         conf = min(1.0, conf)
         saida.append({
+            # o id atravessa o matcher: season_number não é único por série
+            # (uma série pode ter duas temporadas 0, OVAs e especiais)
+            "season_id": season.get("season_id"),
             "season_number": season.get("season_number"),
             "season_title": season.get("season_title"),
             "cr_episodes": season.get("total_episodes"),

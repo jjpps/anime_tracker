@@ -68,6 +68,7 @@ def cmd_match(args, conn):
             continue
         entrada = [
             {
+                "season_id": r["season_id"],
                 "season_number": r["season_number"],
                 "season_title": r["title"],
                 "total_episodes": r["total_episodes"],
@@ -75,10 +76,7 @@ def cmd_match(args, conn):
             }
             for r in seasons
         ]
-        resultados = match_seasons(client, s["title"], entrada)
-        total += db.save_matches(
-            conn, {r["season_number"]: r["season_id"] for r in seasons}, s["series_id"], resultados
-        )
+        total += db.save_matches(conn, match_seasons(client, s["title"], entrada))
     print("\r" + " " * 60 + "\r", end="", file=sys.stderr)
     print(f"{total} temporadas processadas")
     cmd_stats(args, conn)

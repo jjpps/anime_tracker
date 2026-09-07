@@ -151,18 +151,17 @@ def save_history(conn, episodes):
     conn.commit()
 
 
-def save_matches(conn, season_id_por_numero, series_id, resultados):
+def save_matches(conn, resultados):
     """Grava matches SEM tocar no que já foi revisado.
 
     O WHERE no ON CONFLICT é o ponto todo: rodar o matcher de novo não pode
     desfazer uma decisão humana."""
     linhas = []
     for r in resultados:
-        season_id = season_id_por_numero.get(r["season_number"])
-        if not season_id:
+        if not r.get("season_id"):
             continue
         linhas.append({
-            "season_id": season_id,
+            "season_id": r["season_id"],
             "anilist_id": r["anilist_id"],
             "anilist_title": r["anilist_title"],
             "anilist_episodes": r["anilist_episodes"],

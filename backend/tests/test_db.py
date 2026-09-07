@@ -30,8 +30,9 @@ def novo_banco():
     return conn
 
 
-def match(season_number, anilist_id, title, conf):
-    return {"season_number": season_number, "anilist_id": anilist_id, "anilist_title": title,
+def match(season_number, anilist_id, title, conf, season_id=None):
+    return {"season_id": season_id or IDS.get(season_number),
+            "season_number": season_number, "anilist_id": anilist_id, "anilist_title": title,
             "anilist_episodes": 11, "anilist_url": "", "confidence": conf}
 
 
@@ -57,11 +58,11 @@ def test_sync_e_idempotente():
 def test_revisao_sobrevive_a_novo_match():
     """O ponto central: rodar o matcher de novo não desfaz decisão humana."""
     conn = novo_banco()
-    db.save_matches(conn, IDS, "G24H1N3MP", [match(3, 108465, "errado", 1.0)])
+    db.save_matches(conn, [match(3, 108465, "errado", 1.0)])
     db.set_review(conn, "S3", "confirmed", anilist_id=999)
 
     # matcher roda de novo e insiste no id errado
-    db.save_matches(conn, IDS, "G24H1N3MP", [match(3, 108465, "errado de novo", 1.0)])
+    db.save_matches(conn, [match(3, 108465, "errado de novo", 1.0)])
 
     linha = conn.execute("SELECT * FROM matches WHERE season_id='S3'").fetchone()
     assert linha["anilist_id"] == 999, "match revisado foi sobrescrito"
@@ -71,16 +72,15 @@ def test_revisao_sobrevive_a_novo_match():
 
 def test_pendente_e_atualizado_por_novo_match():
     conn = novo_banco()
-    db.save_matches(conn, IDS, "G24H1N3MP", [match(1, 1, "primeiro", 0.8)])
-    db.save_matches(conn, IDS, "G24H1N3MP", [match(1, 2, "segundo", 0.95)])
+    db.save_matches(conn, [match(1, 1, "primeiro", 0.8)])
+    db.save_matches(conn, [match(1, 2, "segundo", 0.95)])
     linha = conn.execute("SELECT * FROM matches WHERE season_id='S1'").fetchone()
     assert linha["anilist_id"] == 2, "pendente deveria aceitar o match novo"
 
 
 def test_separa_revisados_de_pendentes():
     conn = novo_banco()
-    db.save_matches(conn, IDS, "G24H1N3MP",
-                    [match(1, 1, "a", 0.8), match(3, 3, "b", 0.9)])
+    db.save_matches(conn, [match(1, 1, "a", 0.8), match(3, 3, "b", 0.9)])
     db.set_review(conn, "S1", "confirmed")
 
     pendentes = db.pending_review(conn)
@@ -96,7 +96,7 @@ def test_separa_revisados_de_pendentes():
 
 def test_rejeitado_conta_como_revisado():
     conn = novo_banco()
-    db.save_matches(conn, IDS, "G24H1N3MP", [match(1, 1, "a", 0.8)])
+    db.save_matches(conn, [match(1, 1, "a", 0.8)])
     db.set_review(conn, "S1", "rejected")
     assert db.stats(conn)["rejected"] == 1
     assert db.pending_review(conn) == []
@@ -104,7 +104,7 @@ def test_rejeitado_conta_como_revisado():
 
 def test_status_invalido_recusado():
     conn = novo_banco()
-    db.save_matches(conn, IDS, "G24H1N3MP", [match(1, 1, "a", 0.8)])
+    db.save_matches(conn, [match(1, 1, "a", 0.8)])
     try:
         db.set_review(conn, "S1", "talvez")
         raise AssertionError("deveria recusar status inválido")
@@ -112,10 +112,26 @@ def test_status_invalido_recusado():
         pass
 
 
-def test_temporada_inexistente_e_ignorada():
+def test_temporada_sem_id_e_ignorada():
     conn = novo_banco()
-    # o matcher pode devolver temporada que não está no banco; não pode estourar
-    assert db.save_matches(conn, IDS, "G24H1N3MP", [match(99, 1, "a", 0.8)]) == 0
+    # o matcher pode devolver temporada sem id; não pode estourar
+    assert db.save_matches(conn, [match(99, 1, "a", 0.8)]) == 0
+
+
+def test_duas_temporadas_com_mesmo_numero():
+    """Konosuba tem duas temporadas 0 (OVAs e especiais): as duas têm que caber."""
+    conn = db.connect(":memory:")
+    db.save_series(conn, [SERIE])
+    db.save_seasons(conn, SERIE["series_id"], [
+        {"season_id": "OVA1", "season_number": 0, "season_title": "OVAs",
+         "total_episodes": 2, "years": (2017, 2017)},
+        {"season_id": "OVA2", "season_number": 0, "season_title": "Legend of Crimson",
+         "total_episodes": 1, "years": (2019, 2019)},
+    ])
+    n = db.save_matches(conn, [match(0, 10, "a", 0.9, season_id="OVA1"),
+                               match(0, 20, "b", 0.9, season_id="OVA2")])
+    assert n == 2
+    assert db.stats(conn)["matched"] == 2
 
 
 if __name__ == "__main__":
