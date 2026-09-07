@@ -1,7 +1,6 @@
 .venv/
 __pycache__/
 *.pyc
-anilist_cache.json
-anilist_map.json
-crunchyroll.json
 .cache/
+*.db
+anilist_cache.json

@@ -219,7 +219,7 @@ def flag_duplicates(seasons):
 
 
 def main():
-    from crunchyroll import Crunchyroll
+    from .crunchyroll import Crunchyroll
 
     needle = (sys.argv[1] if len(sys.argv) > 1 else "").lower()
     etp_rt = os.environ.get("CR_ETP_RT")

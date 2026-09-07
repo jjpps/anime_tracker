@@ -1,13 +1,21 @@
 DB_TAG := 2026-27
-PY := .venv/bin/python
+PY := $(CURDIR)/.venv/bin/python
+BACKEND := $(CURDIR)/backend
 
-db:  ## baixa o catálogo offline (valida o matcher sem depender da API)
+db:  ## baixa o catálogo local do AniList (casa temporadas sem a API)
 	mkdir -p .cache
 	curl -sL -o .cache/anime-db.json \
 	  https://github.com/manami-project/anime-offline-database/releases/download/$(DB_TAG)/anime-offline-database-minified.json
 
 test:
-	$(PY) test_anilist.py
-	$(PY) crunchyroll.py
+	cd $(BACKEND) && $(PY) tests/test_anilist.py
+	cd $(BACKEND) && $(PY) tests/test_db.py
+	cd $(BACKEND) && $(PY) anime_tracker/crunchyroll.py
 
-.PHONY: db test
+sync:
+	cd $(BACKEND) && $(PY) -m anime_tracker sync
+
+match:
+	cd $(BACKEND) && $(PY) -m anime_tracker match $(ARGS)
+
+.PHONY: db test sync match

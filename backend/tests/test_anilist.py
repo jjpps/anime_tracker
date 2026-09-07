@@ -3,7 +3,12 @@
     python test_anilist.py
 """
 
-from anilist import best_match, normalize, score, season_queries
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from anime_tracker.anilist import best_match, normalize, score, season_queries
 
 MUSHOKU_T1 = {
     "id": 108465, "format": "TV", "episodes": 11, "seasonYear": 2021,
