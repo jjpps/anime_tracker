@@ -49,6 +49,9 @@ def test_caminho_do_banco_ancora_na_raiz():
         assert db.resolve_path() == os.path.join(RAIZ, "anime_tracker.db")
         assert db.resolve_path("/tmp/x.db") == "/tmp/x.db"   # absoluto passa direto
         assert db.resolve_path(":memory:") == ":memory:"
+        # caminho com separador é do cwd: ancorar na raiz criaria banco perdido
+        assert db.resolve_path("../x.db") == "../x.db"
+        assert db.resolve_path("dados/x.db") == "dados/x.db"
     finally:
         os.environ.pop("ANIME_TRACKER_DB", None)
         if anterior is not None:

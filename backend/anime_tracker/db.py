@@ -14,14 +14,20 @@ DB_PADRAO = "anime_tracker.db"
 
 
 def resolve_path(path=None):
-    """Caminho do banco, sempre ancorado na raiz do projeto.
+    """Caminho do banco.
 
-    Relativo ao cwd criaria um banco por diretório de onde se roda: `sync` na
-    raiz e `serve` em backend/ dariam bancos diferentes e tela vazia."""
+    Nome solto ("anime_tracker.db") ancora na raiz do projeto: relativo ao cwd
+    criaria um banco por diretório de onde se roda — `sync` na raiz e `serve`
+    em backend/ dariam bancos diferentes e tela vazia, sem erro.
+
+    Caminho com separador ("../x.db", "dados/x.db") é respeitado como escrito;
+    quem digita um caminho está dizendo onde quer, e ancorar isso na raiz
+    produz um banco vazio em lugar inesperado."""
     caminho = path or os.environ.get("ANIME_TRACKER_DB") or DB_PADRAO
-    if caminho == ":memory:" or os.path.isabs(caminho):
+    if caminho == ":memory:" or os.path.isabs(caminho) or os.sep in caminho:
         return caminho
     return os.path.join(RAIZ, caminho)
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS series (
