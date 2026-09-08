@@ -46,6 +46,15 @@ automatizado; no dia a dia não são necessários.
 Comandos: `sync`, `match`, `review [list|done|confirm|reject]`, `pending`,
 `stats`, `serve`.
 
+### Rate limit do AniList
+
+O cliente segue os headers em vez de um intervalo fixo: `X-RateLimit-Limit`
+define o espaçamento (60/limite segundos entre chamadas), então ele se adapta
+sozinho aos 90/min normais e aos 30/min do estado degradado atual. Num 429,
+espera o `Retry-After` — ou o `X-RateLimit-Reset`, ou 60s — e repete no máximo
+3 vezes antes de desistir, para um 429 permanente não prender a thread do
+servidor.
+
 Na UI, dois botões: **Sincronizar** (Crunchyroll + match) e **Casar com
 AniList** (só o match, sem tocar na CR). Só uma tarefa roda por vez, e o
 progresso aparece no próprio botão. Os logs do AniList saem no console do

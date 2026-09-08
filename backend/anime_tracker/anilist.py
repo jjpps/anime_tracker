@@ -23,9 +23,12 @@ log = logging.getLogger("anime_tracker.anilist")
 
 GRAPHQL = "https://graphql.anilist.co"
 CACHE = "anilist_cache.json"
-# a API pede 30 req/min; com lote de 5 buscas por request sobra folga
+# 5 buscas por request via aliases: 145 séries cabem em poucas dezenas de chamadas
 BATCH = 5
-RATE_SLEEP = 2.5
+# a API está degradada em 30/min (era 90); o header manda, isto é só o palpite
+# inicial até a primeira resposta chegar
+LIMITE_PADRAO = 30
+MAX_TENTATIVAS = 3
 # abaixo disso o match não é confiável o bastante para gravar sem revisão
 THRESHOLD = 0.75
 IGNORED_FORMATS = {"MUSIC", "MANGA", "NOVEL", "ONE_SHOT"}
@@ -55,6 +58,9 @@ class AniList:
         })
         self.cache_path = cache_path
         self.cache = json.load(open(cache_path)) if os.path.exists(cache_path) else {}
+        self.limite = LIMITE_PADRAO
+        self.restante = None
+        self._proxima_chamada = 0.0
 
     def search_many(self, terms):
         """Busca vários termos por request usando aliases GraphQL. Respeita o cache."""
@@ -75,8 +81,6 @@ class AniList:
             )
             for n, termo in enumerate(lote):
                 self.cache[termo] = data[f"a{n}"]["media"]
-            if i + BATCH < len(pendentes):
-                time.sleep(RATE_SLEEP)
         if pendentes:
             self._save_cache()
         return {t: self.cache.get(t, []) for t in terms}
@@ -91,20 +95,63 @@ class AniList:
             log.warning("API indisponível: %s", e)
             return False
 
-    def _post(self, query, variables):
+    def _aguardar_vez(self):
+        """Espaça as chamadas conforme o limite que a própria API informou."""
+        atraso = self._proxima_chamada - time.monotonic()
+        if atraso > 0:
+            time.sleep(atraso)
+
+    def _registrar_limite(self, resp):
+        """Aprende o ritmo pelos headers: o limite muda (90/min normal, 30 degradado)."""
+        try:
+            self.limite = int(resp.headers["X-RateLimit-Limit"])
+        except (KeyError, ValueError, TypeError):
+            pass
+        try:
+            self.restante = int(resp.headers["X-RateLimit-Remaining"])
+        except (KeyError, ValueError, TypeError):
+            self.restante = None
+        self._proxima_chamada = time.monotonic() + 60 / max(1, self.limite)
+
+    def _espera_do_429(self, resp):
+        """Segundos até poder tentar de novo, na ordem que a doc recomenda."""
+        try:
+            return max(1, int(resp.headers["Retry-After"]))
+        except (KeyError, ValueError, TypeError):
+            pass
+        try:  # sem Retry-After, o reset vem como timestamp Unix
+            return max(1, int(int(resp.headers["X-RateLimit-Reset"]) - time.time()))
+        except (KeyError, ValueError, TypeError):
+            return 60
+
+    def _post(self, query, variables, tentativa=1):
+        self._aguardar_vez()
         resp = self.session.post(
             GRAPHQL, json={"query": query, "variables": variables}, timeout=30
         )
+
         if resp.status_code == 429:
-            espera = int(resp.headers.get("Retry-After", 60))
-            log.warning("rate limit atingido; aguardando %ds", espera)
+            espera = self._espera_do_429(resp)
+            # limitado: sem teto, um 429 permanente prenderia a thread do servidor
+            if tentativa >= MAX_TENTATIVAS:
+                raise AniListError(
+                    f"rate limit persistente após {tentativa} tentativas "
+                    f"(aguardar {espera}s)"
+                )
+            log.warning("rate limit atingido; aguardando %ds (tentativa %d/%d)",
+                        espera, tentativa, MAX_TENTATIVAS)
             time.sleep(espera)
-            return self._post(query, variables)
+            self._proxima_chamada = 0.0  # a espera do 429 já cobre o intervalo
+            return self._post(query, variables, tentativa + 1)
+
+        self._registrar_limite(resp)
         payload = resp.json() if resp.content else {}
         if not resp.ok or "errors" in payload:
             erro = (payload.get("errors") or [{}])[0].get("message", resp.text[:200])
             log.error("HTTP %s: %s", resp.status_code, erro)
             raise AniListError(f"AniList {resp.status_code}: {erro}")
+        if self.restante is not None and self.restante <= max(2, self.limite // 10):
+            log.warning("cota quase no fim: %d de %d restantes", self.restante, self.limite)
         return payload["data"]
 
     def _save_cache(self):
