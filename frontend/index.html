@@ -94,7 +94,7 @@
 </main>
 
 <script>
-const estado = { aba: "catalog", q: "" };
+const estado = { aba: "catalog", q: "", stats: null };
 const $ = (id) => document.getElementById(id);
 
 const rota = () => estado.aba === "catalog" ? "/api/catalog" : "/api/pending";
@@ -117,12 +117,21 @@ function render(itens) {
   lista.className = "";
   if (!itens.length) {
     lista.className = "vazio";
-    lista.textContent = estado.aba === "catalog"
-      ? "nada revisado ainda — comece pela aba a revisar"
-      : "nada pendente";
+    lista.textContent = mensagemVazia();
     return;
   }
   lista.replaceChildren(...itens.map(criarItem));
+}
+
+// lista vazia tem três causas diferentes; dizer qual evita o usuário achar
+// que terminou quando na verdade nem começou
+function mensagemVazia() {
+  const s = estado.stats;
+  if (s && !s.series) return "nenhum dado ainda — clique em Sincronizar";
+  if (s && !s.matched) return "séries importadas, mas nenhuma casada com o AniList ainda";
+  return estado.aba === "catalog"
+    ? "nada revisado ainda — comece pela aba a revisar"
+    : "nada pendente: tudo já foi revisado";
 }
 
 function criarItem(r) {
@@ -268,6 +277,7 @@ function acompanharSync() {
 async function resumo() {
   try {
     const s = await (await fetch("/api/stats")).json();
+    estado.stats = s;
     $("resumo").textContent =
       `${s.series} séries · ${s.seasons} temporadas · ${s.confirmed} confirmados · ${s.pending} a revisar`;
     const conectado = s.anilist_conectado;
@@ -294,8 +304,7 @@ $("busca").oninput = (e) => {
 
 $("sincronizar").onclick = () => sincronizar(false);
 
-resumo();
-carregar();
+resumo().then(carregar);
 // se um sync já estiver rodando (outra aba, ou reload no meio), acompanha
 fetch("/api/sync").then(r => r.json()).then(s => {
   if (s.rodando) { $("sincronizar").disabled = true; acompanharSync(); }

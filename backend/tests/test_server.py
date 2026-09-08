@@ -155,6 +155,21 @@ def test_status_do_sync():
     assert s["rodando"] is False and s["ultimo_sync"] is None
 
 
+def test_stats_distingue_banco_vazio():
+    """A UI usa series/matched para dizer QUAL etapa falta em vez de 'nada'."""
+    import tempfile as _tmp
+
+    caminho = _tmp.mktemp(suffix=".db")
+    db.connect(caminho).close()
+    app = create_app(caminho)
+    app.config["TESTING"] = True
+    vazio = app.test_client().get("/api/stats").get_json()
+    assert vazio["series"] == 0 and vazio["matched"] == 0
+
+    com_dados = app_com_dados()[0].get("/api/stats").get_json()
+    assert com_dados["series"] == 1 and com_dados["matched"] == 2
+
+
 def test_frontend_servido():
     cli, _ = app_com_dados()
     r = cli.get("/")

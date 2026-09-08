@@ -39,6 +39,10 @@ make test
 make serve                     # http://localhost:8000
 ```
 
+Depois de subir, o resto é pela UI: **Sincronizar** importa da Crunchyroll e
+**Conectar AniList** faz o OAuth. Os comandos de terminal existem para uso
+automatizado; no dia a dia não são necessários.
+
 Comandos: `sync`, `match`, `review [list|done|confirm|reject]`, `pending`,
 `stats`, `serve`.
 
