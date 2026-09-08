@@ -11,11 +11,13 @@ import secrets
 from flask import Flask, jsonify, redirect, request, send_from_directory
 
 from . import db, oauth
+from .config import load_env
 
 FRONTEND = os.path.join(os.path.dirname(__file__), "..", "..", "frontend")
 
 
 def create_app(db_path=None):
+    load_env()
     app = Flask(__name__, static_folder=None)
     # sessão só guarda o state do OAuth; cookie assinado basta
     app.secret_key = os.environ.get("FLASK_SECRET", secrets.token_hex(16))

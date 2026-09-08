@@ -29,7 +29,7 @@ Nenhuma regra de negócio vive em `cli.py` nem em `server.py`: os dois leem de
 ```bash
 python -m venv .venv && .venv/bin/pip install -r backend/requirements.txt
 
-export CR_ETP_RT="<cookie etp_rt do crunchyroll.com>"
+cp .env.example .env        # e preencha com os valores reais
 make sync                      # importa watchlist, histórico e temporadas
 make db                        # catálogo local do AniList (opcional)
 make match ARGS=--offline      # casa temporadas; sem --offline usa a API
@@ -50,8 +50,7 @@ Não há `make` no Windows; os comandos equivalentes:
 python -m venv .venv
 .venv\Scripts\pip install -r backend\requirements.txt
 
-$env:CR_ETP_RT = "<cookie etp_rt>"
-$env:ANIME_TRACKER_DB = "$PWD\anime_tracker.db"
+copy .env.example .env      # e preencha com os valores reais
 
 cd backend
 ..\.venv\Scripts\python -m anime_tracker sync
@@ -59,18 +58,15 @@ cd backend
 ..\.venv\Scripts\python -m anime_tracker serve
 ```
 
-As variáveis valem só para o terminal aberto; para persistir use
-`setx CR_ETP_RT "..."` e abra um terminal novo.
+O `.env` é lido automaticamente; não precisa exportar nada. Uma variável
+definida no shell sobrepõe o arquivo, se você quiser trocar um valor pontual.
 
 ## AniList OAuth
 
 Em anilist.co/settings/developer, crie uma aplicação com a Redirect URL
-`http://localhost:8000/auth/anilist/callback` e exporte:
-
-```bash
-export ANILIST_CLIENT_ID=...
-export ANILIST_CLIENT_SECRET=...
-```
+`http://localhost:8000/auth/anilist/callback` (idêntica à do `.env`) e preencha
+`ANILIST_CLIENT_ID` e `ANILIST_CLIENT_SECRET`. O client id é um inteiro curto e
+não é secreto; o secret é.
 
 Depois "Conectar AniList" no topo da página. O token vale 1 ano, não há refresh
 token e não há scopes — ele dá acesso quase total à conta e fica no SQLite, que

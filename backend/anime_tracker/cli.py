@@ -15,6 +15,7 @@ import os
 import sys
 
 from . import db
+from .config import load_env
 from .anilist import AniList, AniListError, match_seasons
 from .crunchyroll import Crunchyroll, CrunchyrollError
 from .progress import series_status, watched_by_season
@@ -183,6 +184,7 @@ def main(argv=None):
     p.add_argument("--debug", action="store_true")
 
     args = parser.parse_args(argv)
+    load_env()  # antes de qualquer leitura de os.environ
     conn = db.connect(args.db)
     try:
         {"sync": cmd_sync, "match": cmd_match, "review": cmd_review,

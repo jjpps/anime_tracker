@@ -8,7 +8,7 @@ import os
 import sqlite3
 from datetime import datetime, timezone
 
-DB_PATH = os.environ.get("ANIME_TRACKER_DB", "anime_tracker.db")
+DB_PADRAO = "anime_tracker.db"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS series (
@@ -91,7 +91,8 @@ def agora():
 
 
 def connect(path=None):
-    conn = sqlite3.connect(path or DB_PATH)
+    # resolvido na chamada, não no import: o .env é carregado depois dos imports
+    conn = sqlite3.connect(path or os.environ.get("ANIME_TRACKER_DB") or DB_PADRAO)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
