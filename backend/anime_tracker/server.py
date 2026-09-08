@@ -56,9 +56,9 @@ def create_app(db_path=None):
 
     @app.get("/api/catalog")
     def catalog():
-        """Menu 1: o que já foi revisado."""
+        """Menu 1: o que tem correspondência no AniList, revisado ou não."""
         with conn() as c:
-            return jsonify(_filtrar(linhas(db.reviewed(c)), request.args.get("q", "")))
+            return jsonify(_filtrar(linhas(db.catalog(c)), request.args.get("q", "")))
 
     @app.get("/api/pending")
     def pending():

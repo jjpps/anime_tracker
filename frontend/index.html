@@ -128,9 +128,9 @@ function render(itens) {
 function mensagemVazia() {
   const s = estado.stats;
   if (s && !s.series) return "nenhum dado ainda — clique em Sincronizar";
-  if (s && !s.matched) return "séries importadas, mas nenhuma casada com o AniList ainda";
+  if (s && !s.matched) return "séries importadas, mas nenhuma casada com o AniList ainda — rode o match";
   return estado.aba === "catalog"
-    ? "nada revisado ainda — comece pela aba a revisar"
+    ? "nenhuma temporada com correspondência no AniList"
     : "nada pendente: tudo já foi revisado";
 }
 
@@ -167,14 +167,17 @@ function criarItem(r) {
     div.append(chip("dup", `mesma obra da T${r.duplicate_of}`));
   }
 
-  if (estado.aba === "catalog") {
-    div.append(chip(r.review_status, r.review_status === "confirmed" ? "confirmado" : "rejeitado"));
-    div.append(acoes(r, [["Reabrir", "pending"]]));
-  } else {
+  if (estado.aba === "catalog") div.append(chip(r.review_status, ROTULO[r.review_status]));
+
+  if (r.review_status === "pending") {
     div.append(acoes(r, [["Confirmar", "confirmed"], ["Rejeitar", "rejected"]], true));
+  } else {
+    div.append(acoes(r, [["Reabrir", "pending"]]));
   }
   return div;
 }
+
+const ROTULO = { confirmed: "confirmado", rejected: "rejeitado", pending: "a revisar" };
 
 function chip(classe, texto) {
   const s = document.createElement("span");

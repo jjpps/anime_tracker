@@ -80,7 +80,17 @@ CREATE TABLE IF NOT EXISTS settings (
     saved_at TEXT NOT NULL
 );
 
--- as duas faces do que o usuário pediu separar
+-- menu 1: tudo que já tem correspondência no AniList, revisado ou não
+CREATE VIEW IF NOT EXISTS v_catalog AS
+SELECT m.*, s.series_id, s.season_number, s.title AS season_title,
+       s.total_episodes AS cr_episodes, se.title AS series_title
+FROM matches m
+JOIN seasons s USING (season_id)
+JOIN series se USING (series_id)
+WHERE m.anilist_id IS NOT NULL
+ORDER BY se.title, s.season_number;
+
+-- menu 2: o que ainda precisa de decisão
 CREATE VIEW IF NOT EXISTS v_pending_review AS
 SELECT m.*, s.series_id, s.season_number, s.title AS season_title,
        s.total_episodes AS cr_episodes, se.title AS series_title
@@ -252,6 +262,12 @@ def set_review(conn, season_id, status, anilist_id=None):
 
 
 # --- leitura ---
+
+def catalog(conn, limit=None):
+    """Menu 1: temporadas com match resolvido, independente da revisão."""
+    sql = "SELECT * FROM v_catalog"
+    return conn.execute(sql + (f" LIMIT {int(limit)}" if limit else "")).fetchall()
+
 
 def pending_review(conn, limit=None):
     sql = "SELECT * FROM v_pending_review"

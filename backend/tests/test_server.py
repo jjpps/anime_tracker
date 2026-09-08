@@ -45,32 +45,42 @@ def app_com_dados():
     return app.test_client(), caminho
 
 
-def test_menus_separam_revisado_de_pendente():
-    cli, caminho = app_com_dados()
+def test_menu_catalogo_mostra_tudo_que_tem_match():
+    """Menu 1 = match resolvido, revisado ou não; menu 2 = só o que falta decidir."""
+    cli, _ = app_com_dados()
+    assert len(cli.get("/api/catalog").get_json()) == 2, "match resolvido já entra no catálogo"
     assert len(cli.get("/api/pending").get_json()) == 2
-    assert cli.get("/api/catalog").get_json() == []
 
-    r = cli.post("/api/review/S1", json={"status": "confirmed"})
-    assert r.status_code == 200
+    assert cli.post("/api/review/S1", json={"status": "confirmed"}).status_code == 200
 
-    pendentes = cli.get("/api/pending").get_json()
     catalogo = cli.get("/api/catalog").get_json()
-    assert [x["season_id"] for x in pendentes] == ["S3"]
-    assert [x["season_id"] for x in catalogo] == ["S1"]
-    assert catalogo[0]["series_title"] == "Mushoku Tensei"
+    pendentes = cli.get("/api/pending").get_json()
+    assert len(catalogo) == 2, "revisar não tira do catálogo"
+    assert [x["season_id"] for x in pendentes] == ["S3"], "revisado sai da fila"
+    assert {x["season_id"]: x["review_status"] for x in catalogo} == {
+        "S1": "confirmed", "S3": "pending"}
+
+
+def test_catalogo_ignora_temporada_sem_match():
+    cli, caminho = app_com_dados()
+    conn = db.connect(caminho)
+    conn.execute("UPDATE matches SET anilist_id = NULL WHERE season_id = 'S1'")
+    conn.commit()
+    conn.close()
+    assert [x["season_id"] for x in cli.get("/api/catalog").get_json()] == ["S3"]
 
 
 def test_confirmar_corrigindo_o_id():
     cli, _ = app_com_dados()
     cli.post("/api/review/S3", json={"status": "confirmed", "anilist_id": 999})
-    assert cli.get("/api/catalog").get_json()[0]["anilist_id"] == 999
+    por_id = {x["season_id"]: x for x in cli.get("/api/catalog").get_json()}
+    assert por_id["S3"]["anilist_id"] == 999
 
 
 def test_reabrir_volta_para_pendente():
     cli, _ = app_com_dados()
     cli.post("/api/review/S1", json={"status": "confirmed"})
     cli.post("/api/review/S1", json={"status": "pending"})
-    assert cli.get("/api/catalog").get_json() == []
     assert len(cli.get("/api/pending").get_json()) == 2
 
 
