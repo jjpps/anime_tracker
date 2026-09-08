@@ -42,6 +42,26 @@ make serve                     # http://localhost:8000
 Comandos: `sync`, `match`, `review [list|done|confirm|reject]`, `pending`,
 `stats`, `serve`.
 
+### Windows (PowerShell)
+
+Não há `make` no Windows; os comandos equivalentes:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\pip install -r backend\requirements.txt
+
+$env:CR_ETP_RT = "<cookie etp_rt>"
+$env:ANIME_TRACKER_DB = "$PWD\anime_tracker.db"
+
+cd backend
+..\.venv\Scripts\python -m anime_tracker sync
+..\.venv\Scripts\python -m anime_tracker match
+..\.venv\Scripts\python -m anime_tracker serve
+```
+
+As variáveis valem só para o terminal aberto; para persistir use
+`setx CR_ETP_RT "..."` e abra um terminal novo.
+
 ## AniList OAuth
 
 Em anilist.co/settings/developer, crie uma aplicação com a Redirect URL

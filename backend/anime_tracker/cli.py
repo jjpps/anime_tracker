@@ -15,8 +15,8 @@ import os
 import sys
 
 from . import db
-from .anilist import AniList, match_seasons
-from .crunchyroll import Crunchyroll
+from .anilist import AniList, AniListError, match_seasons
+from .crunchyroll import Crunchyroll, CrunchyrollError
 from .progress import series_status, watched_by_season
 
 
@@ -187,6 +187,15 @@ def main(argv=None):
     try:
         {"sync": cmd_sync, "match": cmd_match, "review": cmd_review,
          "pending": cmd_pending, "stats": cmd_stats, "serve": cmd_serve}[args.cmd](args, conn)
+    except AniListError as e:
+        # falha da API deles não é bug nosso: mensagem clara em vez de traceback
+        sys.exit(f"\nAniList indisponível: {e}\n"
+                 f"Alternativa: `match --offline` usa o catálogo local (baixe com make db).")
+    except CrunchyrollError as e:
+        sys.exit(f"\nCrunchyroll: {e}\n"
+                 f"Se for erro de auth, o cookie etp_rt expirou — pegue um novo no navegador.")
+    except KeyboardInterrupt:
+        sys.exit("\ninterrompido")
     finally:
         conn.close()
 
