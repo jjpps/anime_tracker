@@ -75,6 +75,14 @@ class AniList:
             self._save_cache()
         return {t: self.cache.get(t, []) for t in terms}
 
+    def disponivel(self):
+        """Sonda barata: a API de dados cai independente do resto do AniList."""
+        try:
+            self._post("{ Media(id: 1, type: ANIME) { id } }", {})
+            return True
+        except (AniListError, requests.RequestException):
+            return False
+
     def _post(self, query, variables):
         resp = self.session.post(
             GRAPHQL, json={"query": query, "variables": variables}, timeout=30

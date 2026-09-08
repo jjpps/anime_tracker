@@ -9,7 +9,9 @@ Camadas:
   2. escopo = watchlist ∪ séries distintas do histórico, resolvidas em lote
      (3 chamadas para 110 séries) — traz episode_count/season_count;
   3. temporadas rebuscadas só para série cuja contagem mudou ou que nunca foi
-     sincronizada.
+     sincronizada;
+  4. match das temporadas sem correspondência, que é o que alimenta a fila de
+     revisão — sincronizar sem casar deixaria as duas telas vazias.
 
 `is_complete` da temporada NÃO serve como sinal: a CR devolve False até para
 temporada encerrada há anos.
@@ -18,11 +20,17 @@ temporada encerrada há anos.
 from datetime import datetime, timedelta, timezone
 
 from . import db
+from .anilist import match_seasons
 
 TTL_HORAS = 6
 # uma folga na marca d'água custa uma página e cobre desordem na borda
 OVERLAP = timedelta(days=1)
 ULTIMO_SYNC = "last_sync_at"
+
+
+# distingue "descubra a fonte sozinho" de "não case nada": com um único None
+# os dois sentidos se confundem e o teste acaba batendo na rede
+AUTO = object()
 
 
 class SyncBloqueado(Exception):
@@ -89,8 +97,62 @@ def escopo(conn, ids_watchlist):
     return list(dict.fromkeys([*ids_watchlist, *do_historico]))
 
 
-def run(cr, conn, force=False, ttl_horas=TTL_HORAS, progresso=None):
-    """Executa o sync incremental. Devolve o resumo do que mudou."""
+def cliente_de_match():
+    """(cliente, nome da fonte). AniList se estiver no ar; senão o catálogo local.
+
+    A troca de fonte é reportada em vez de silenciosa: casar contra outra base
+    sem dizer seria esconder de onde veio o dado."""
+    from .anilist import AniList
+    from .catalog import CatalogoAusente, OfflineIndex
+
+    cliente = AniList()
+    if cliente.disponivel():
+        return cliente, "anilist"
+    try:
+        return OfflineIndex(), "catálogo local"
+    except CatalogoAusente:
+        return None, None
+
+
+def series_para_casar(conn, atualizadas):
+    """Séries com temporada sem match, mais as que acabaram de mudar."""
+    sem_match = conn.execute(
+        """SELECT DISTINCT s.series_id, se.title
+             FROM seasons s
+             JOIN series se USING (series_id)
+             LEFT JOIN matches m USING (season_id)
+            WHERE m.season_id IS NULL"""
+    ).fetchall()
+    alvos = {r["series_id"]: r["title"] for r in sem_match}
+    alvos.update({s["series_id"]: s["series_title"] for s in atualizadas})
+    return list(alvos.items())
+
+
+def casar(conn, cliente, alvos, aviso):
+    """Casa as temporadas das séries indicadas. Revisado não é tocado (ver db)."""
+    total = 0
+    for i, (series_id, titulo) in enumerate(alvos, 1):
+        aviso(f"casando {titulo}", i, len(alvos))
+        entrada = [
+            {
+                "season_id": r["season_id"],
+                "season_number": r["season_number"],
+                "season_title": r["title"],
+                "total_episodes": r["total_episodes"],
+                "years": (r["year_start"], r["year_end"]) if r["year_start"] else None,
+            }
+            for r in db.seasons_of(conn, series_id)
+        ]
+        if entrada:
+            total += db.save_matches(conn, match_seasons(cliente, titulo, entrada))
+    return total
+
+
+def run(cr, conn, force=False, ttl_horas=TTL_HORAS, progresso=None, matcher=AUTO):
+    """Sincroniza a Crunchyroll e casa o que ficou sem correspondência.
+
+    matcher=AUTO escolhe a fonte sozinho; None pula o match; um cliente
+    explícito é usado como veio."""
     if not force:
         falta = minutos_ate_liberar(conn, ttl_horas)
         if falta:
@@ -98,7 +160,7 @@ def run(cr, conn, force=False, ttl_horas=TTL_HORAS, progresso=None):
 
     aviso = progresso or (lambda *a, **k: None)
     resumo = {"episodios": 0, "series": 0, "series_atualizadas": 0, "temporadas": 0,
-              "incremental": False}
+              "matches": 0, "fonte_match": None, "incremental": False}
 
     # 1. histórico, parando onde o conhecido começa
     desde = marca_dagua(conn)
@@ -145,6 +207,15 @@ def run(cr, conn, force=False, ttl_horas=TTL_HORAS, progresso=None):
         temporadas = cr.seasons(serie["series_id"])
         db.save_seasons(conn, serie["series_id"], temporadas)
         resumo["temporadas"] += len(temporadas)
+
+    # 4. casar o que ficou sem correspondência, para gerar a fila de revisão
+    fonte = None
+    if matcher is AUTO:
+        aviso("procurando o AniList", 0, 1)
+        matcher, fonte = cliente_de_match()
+    resumo["fonte_match"] = fonte
+    if matcher is not None:
+        resumo["matches"] = casar(conn, matcher, series_para_casar(conn, pendentes), aviso)
 
     db.set_setting(conn, ULTIMO_SYNC, datetime.now(timezone.utc).isoformat(timespec="seconds"))
     return resumo

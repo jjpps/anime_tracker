@@ -42,6 +42,10 @@ def cmd_sync(args, conn):
     modo = "incremental" if r["incremental"] else "completo"
     print(f"sync {modo}: {r['episodios']} episódios novos, {r['series']} séries, "
           f"{r['series_atualizadas']} com temporadas rebuscadas ({r['temporadas']} temporadas)")
+    if r["fonte_match"]:
+        print(f"match ({r['fonte_match']}): {r['matches']} temporadas casadas")
+    else:
+        print("match não rodou: AniList fora do ar e catálogo local ausente (make db)")
 
 
 def cmd_match(args, conn):
