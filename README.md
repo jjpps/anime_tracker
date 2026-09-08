@@ -46,6 +46,12 @@ automatizado; no dia a dia não são necessários.
 Comandos: `sync`, `match`, `review [list|done|confirm|reject]`, `pending`,
 `stats`, `serve`.
 
+Na UI, dois botões: **Sincronizar** (Crunchyroll + match) e **Casar com
+AniList** (só o match, sem tocar na CR). Só uma tarefa roda por vez, e o
+progresso aparece no próprio botão. Os logs do AniList saem no console do
+servidor (`anime_tracker.anilist`, `anime_tracker.sync`,
+`anime_tracker.catalog`).
+
 ## Sync incremental
 
 `sync` (ou o botão **Sincronizar** na UI) traz só o que mudou:

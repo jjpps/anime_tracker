@@ -11,12 +11,15 @@ Uso:
 
 import difflib
 import json
+import logging
 import os
 import re
 import sys
 import time
 
 import requests
+
+log = logging.getLogger("anime_tracker.anilist")
 
 GRAPHQL = "https://graphql.anilist.co"
 CACHE = "anilist_cache.json"
@@ -56,6 +59,9 @@ class AniList:
     def search_many(self, terms):
         """Busca vários termos por request usando aliases GraphQL. Respeita o cache."""
         pendentes = [t for t in dict.fromkeys(terms) if t not in self.cache]
+        if pendentes:
+            log.info("buscando %d termo(s) em %d request(s); %d já em cache",
+                     len(pendentes), -(-len(pendentes) // BATCH), len(terms) - len(pendentes))
         for i in range(0, len(pendentes), BATCH):
             lote = pendentes[i : i + BATCH]
             aliases = " ".join(
@@ -79,8 +85,10 @@ class AniList:
         """Sonda barata: a API de dados cai independente do resto do AniList."""
         try:
             self._post("{ Media(id: 1, type: ANIME) { id } }", {})
+            log.info("API disponível (%s)", GRAPHQL)
             return True
-        except (AniListError, requests.RequestException):
+        except (AniListError, requests.RequestException) as e:
+            log.warning("API indisponível: %s", e)
             return False
 
     def _post(self, query, variables):
@@ -89,11 +97,13 @@ class AniList:
         )
         if resp.status_code == 429:
             espera = int(resp.headers.get("Retry-After", 60))
+            log.warning("rate limit atingido; aguardando %ds", espera)
             time.sleep(espera)
             return self._post(query, variables)
         payload = resp.json() if resp.content else {}
         if not resp.ok or "errors" in payload:
             erro = (payload.get("errors") or [{}])[0].get("message", resp.text[:200])
+            log.error("HTTP %s: %s", resp.status_code, erro)
             raise AniListError(f"AniList {resp.status_code}: {erro}")
         return payload["data"]
 

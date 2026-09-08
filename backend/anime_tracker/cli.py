@@ -11,6 +11,7 @@
 """
 
 import argparse
+import logging
 import os
 import sys
 
@@ -49,41 +50,22 @@ def cmd_sync(args, conn):
 
 
 def cmd_match(args, conn):
+    matcher = sync.AUTO
     if args.offline:
         from .catalog import CatalogoAusente, OfflineIndex
 
         try:
-            client = OfflineIndex()
+            matcher = OfflineIndex()
         except CatalogoAusente as e:
             sys.exit(str(e))
-    else:
-        client = AniList()
 
-    series = conn.execute(
-        "SELECT series_id, title FROM series WHERE availability = 'available'"
-    ).fetchall()
-    if args.filtro:
-        series = [s for s in series if args.filtro.lower() in s["title"].lower()]
-
-    total = 0
-    for i, s in enumerate(series, 1):
-        _progresso(i, len(series), s["title"])
-        seasons = db.seasons_of(conn, s["series_id"])
-        if not seasons:
-            continue
-        entrada = [
-            {
-                "season_id": r["season_id"],
-                "season_number": r["season_number"],
-                "season_title": r["title"],
-                "total_episodes": r["total_episodes"],
-                "years": (r["year_start"], r["year_end"]) if r["year_start"] else None,
-            }
-            for r in seasons
-        ]
-        total += db.save_matches(conn, match_seasons(client, s["title"], entrada))
+    r = sync.rodar_match(conn, matcher=matcher, todas=args.todas, filtro=args.filtro,
+                         progresso=lambda texto, i, total: _progresso(i, total, texto))
     print("\r" + " " * 60 + "\r", end="", file=sys.stderr)
-    print(f"{total} temporadas processadas")
+    if r["fonte_match"] is None and matcher is sync.AUTO:
+        sys.exit("AniList fora do ar e catálogo local ausente — rode `make db`")
+    print(f"{r['matches']} temporadas casadas em {r['alvos']} séries"
+          + (f" (fonte: {r['fonte_match']})" if r["fonte_match"] else ""))
     cmd_stats(args, conn)
 
 
@@ -172,6 +154,8 @@ def main(argv=None):
     p = sub.add_parser("match", help="casa temporadas da CR com obras do AniList")
     p.add_argument("filtro", nargs="?", default="", help="filtra por trecho do título")
     p.add_argument("--offline", action="store_true", help="usa o catálogo local em vez da API")
+    p.add_argument("--todas", action="store_true",
+                   help="recasa também o que já tem correspondência (revisado é preservado)")
 
     p = sub.add_parser("review", help="fila de revisão dos matches")
     p.add_argument("acao", nargs="?", default="list", choices=["list", "done", "confirm", "reject"])
@@ -190,6 +174,7 @@ def main(argv=None):
     p.add_argument("--debug", action="store_true")
 
     args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
     load_env()  # antes de qualquer leitura de os.environ
     conn = db.connect(args.db)
     try:

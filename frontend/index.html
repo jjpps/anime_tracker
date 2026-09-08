@@ -72,12 +72,12 @@
     background: var(--bg); padding: 8px 10px; border-radius: 6px;
     overflow-x: auto; font-size: 12px; margin: 8px 0 6px;
   }
-  #sincronizar {
+  #sincronizar, #casar {
     padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px;
     border: 1px solid var(--linha); background: #232733; color: var(--texto);
   }
-  #sincronizar:hover:not(:disabled) { border-color: var(--acento); }
-  #sincronizar:disabled { opacity: .6; cursor: default; }
+  #sincronizar:hover:not(:disabled), #casar:hover:not(:disabled) { border-color: var(--acento); }
+  #sincronizar:disabled, #casar:disabled { opacity: .6; cursor: default; }
   #conectar {
     padding: 6px 12px; border-radius: 6px; text-decoration: none;
     font-size: 13px; border: 1px solid var(--linha); color: var(--texto);
@@ -93,6 +93,7 @@
   </nav>
   <span id="resumo"></span>
   <button id="sincronizar">Sincronizar</button>
+  <button id="casar">Casar com AniList</button>
   <a id="conectar" href="/auth/anilist">Conectar AniList</a>
 </header>
 
@@ -238,57 +239,75 @@ function acoes(r, botoes, comCorrecao) {
   return box;
 }
 
-let pollSync;
+let pollTarefa;
+const BOTOES = { sync: ["sincronizar", "Sincronizar"], match: ["casar", "Casar com AniList"] };
 
-async function sincronizar(force = false) {
-  const botao = $("sincronizar");
-  botao.disabled = true;
-  const resp = await fetch("/api/sync", {
+function travarBotoes(travado) {
+  for (const [id] of Object.values(BOTOES)) $(id).disabled = travado;
+}
+
+async function iniciarTarefa(tipo, rota, corpo) {
+  travarBotoes(true);
+  const resp = await fetch(rota, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ force }),
+    body: JSON.stringify(corpo),
   });
 
   if (resp.status === 429) {
     const { minutos_ate_liberar } = await resp.json();
-    botao.disabled = false;
+    travarBotoes(false);
     // o TTL evita repetição acidental, mas o clique explícito é intenção
     if (confirm(`Sincronizado há pouco (libera em ${minutos_ate_liberar} min). Sincronizar mesmo assim?`)) {
-      return sincronizar(true);
+      return iniciarTarefa(tipo, rota, { ...corpo, force: true });
     }
     return;
   }
   if (!resp.ok) {
-    alert("não foi possível sincronizar: " + ((await resp.json()).erro || resp.status));
-    botao.disabled = false;
+    alert("não foi possível iniciar: " + ((await resp.json()).erro || resp.status));
+    travarBotoes(false);
     return;
   }
-  acompanharSync();
+  acompanharTarefa();
 }
 
-function acompanharSync() {
-  clearInterval(pollSync);
-  pollSync = setInterval(async () => {
+function acompanharTarefa() {
+  clearInterval(pollTarefa);
+  pollTarefa = setInterval(async () => {
     let s;
-    try { s = await (await fetch("/api/sync")).json(); } catch { return; }
+    try { s = await (await fetch("/api/task")).json(); } catch { return; }
 
+    const [id, rotulo] = BOTOES[s.tipo] || BOTOES.sync;
     if (s.rodando) {
       const passo = s.total ? ` ${s.feito}/${s.total}` : "";
-      $("sincronizar").textContent = `${s.etapa || "sincronizando"}${passo}...`;
+      $(id).textContent = `${s.etapa || rotulo}${passo}...`;
       return;
     }
 
-    clearInterval(pollSync);
-    $("sincronizar").textContent = "Sincronizar";
-    $("sincronizar").disabled = false;
-    if (s.erro) alert("sync falhou: " + s.erro);
-    else if (s.resultado) {
-      const r = s.resultado;
-      $("sincronizar").title =
-        `${r.episodios} episódios novos · ${r.series_atualizadas} séries atualizadas`;
-    }
+    clearInterval(pollTarefa);
+    $(id).textContent = rotulo;
+    travarBotoes(false);
+    if (s.erro) alert(`${s.tipo} falhou: ` + s.erro);
+    else if (s.resultado) relatar(s.tipo, s.resultado, id);
     await Promise.all([carregar(), resumo()]);
   }, 1000);
+}
+
+function relatar(tipo, r, id) {
+  // a fonte do match aparece: casar contra outra base não pode ser silencioso
+  const fonte = r.fonte_match ? ` · via ${r.fonte_match}` : " · match não rodou";
+  $(id).title = tipo === "sync"
+    ? `${r.episodios} episódios novos · ${r.matches} temporadas casadas${fonte}`
+    : `${r.matches} temporadas casadas em ${r.alvos} séries${fonte}`;
+
+  // sem fonte de match a fila fica vazia; avisar só no tooltip esconderia isso
+  if (!r.fonte_match) return avisarSemMatch();
+  if (tipo === "match" && !r.alvos) {
+    if (confirm("Todas as temporadas já têm correspondência. Refazer o match de tudo?" +
+                "\n(o que você já revisou é preservado)")) {
+      iniciarTarefa("match", "/api/match", { todas: true });
+    }
+  }
 }
 
 function avisarSemMatch() {
@@ -333,12 +352,13 @@ $("busca").oninput = (e) => {
   debounce = setTimeout(carregar, 250);
 };
 
-$("sincronizar").onclick = () => sincronizar(false);
+$("sincronizar").onclick = () => iniciarTarefa("sync", "/api/sync", {});
+$("casar").onclick = () => iniciarTarefa("match", "/api/match", {});
 
 resumo().then(carregar);
 // se um sync já estiver rodando (outra aba, ou reload no meio), acompanha
-fetch("/api/sync").then(r => r.json()).then(s => {
-  if (s.rodando) { $("sincronizar").disabled = true; acompanharSync(); }
+fetch("/api/task").then(r => r.json()).then(s => {
+  if (s.rodando) { travarBotoes(true); acompanharTarefa(); }
 }).catch(() => {});
 </script>
 </body>

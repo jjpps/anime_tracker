@@ -17,10 +17,13 @@ Camadas:
 temporada encerrada há anos.
 """
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 from . import db
 from .anilist import match_seasons
+
+log = logging.getLogger("anime_tracker.sync")
 
 TTL_HORAS = 6
 # uma folga na marca d'água custa uma página e cobre desordem na borda
@@ -105,12 +108,17 @@ def cliente_de_match():
     from .anilist import AniList
     from .catalog import CatalogoAusente, OfflineIndex
 
+    log.info("escolhendo fonte de match: sondando o AniList")
     cliente = AniList()
     if cliente.disponivel():
+        log.info("fonte de match: API do AniList")
         return cliente, "anilist"
     try:
-        return OfflineIndex(), "catálogo local"
-    except CatalogoAusente:
+        indice = OfflineIndex()
+        log.info("fonte de match: catálogo local (AniList fora do ar)")
+        return indice, "catálogo local"
+    except CatalogoAusente as e:
+        log.error("sem fonte de match: %s", e)
         return None, None
 
 
@@ -146,6 +154,38 @@ def casar(conn, cliente, alvos, aviso):
         if entrada:
             total += db.save_matches(conn, match_seasons(cliente, titulo, entrada))
     return total
+
+
+def series_com_temporadas(conn):
+    """Todas as séries que têm temporadas, para recasar do zero."""
+    return [
+        (r["series_id"], r["title"])
+        for r in conn.execute(
+            """SELECT DISTINCT se.series_id, se.title
+                 FROM series se JOIN seasons s USING (series_id)
+                ORDER BY se.title"""
+        )
+    ]
+
+
+def rodar_match(conn, matcher=AUTO, todas=False, filtro="", progresso=None):
+    """Match isolado, sem tocar na Crunchyroll.
+
+    `todas=True` recasa tudo que não foi revisado — serve para refazer com a
+    API do AniList o que foi casado contra o catálogo local."""
+    aviso = progresso or (lambda *a, **k: None)
+    fonte = None
+    if matcher is AUTO:
+        aviso("procurando o AniList", 0, 1)
+        matcher, fonte = cliente_de_match()
+    if matcher is None:
+        return {"matches": 0, "fonte_match": None, "alvos": 0}
+
+    alvos = series_com_temporadas(conn) if todas else series_para_casar(conn, [])
+    if filtro:
+        alvos = [(i, t) for i, t in alvos if filtro.lower() in (t or "").lower()]
+    return {"matches": casar(conn, matcher, alvos, aviso),
+            "fonte_match": fonte, "alvos": len(alvos)}
 
 
 def run(cr, conn, force=False, ttl_horas=TTL_HORAS, progresso=None, matcher=AUTO):

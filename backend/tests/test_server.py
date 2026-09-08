@@ -6,6 +6,7 @@
 import os
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -146,7 +147,7 @@ def test_sync_respeita_ttl():
     assert r.status_code == 429
     assert r.get_json()["minutos_ate_liberar"] > 0
 
-    assert cli.get("/api/sync").get_json()["rodando"] is False
+    assert cli.get("/api/task").get_json()["rodando"] is False
 
 
 def test_sync_sem_credencial_nao_inicia():
@@ -160,10 +161,42 @@ def test_sync_sem_credencial_nao_inicia():
             os.environ["CR_ETP_RT"] = anterior
 
 
-def test_status_do_sync():
+def test_status_da_tarefa():
     cli, _ = app_com_dados()
-    s = cli.get("/api/sync").get_json()
-    assert s["rodando"] is False and s["ultimo_sync"] is None
+    s = cli.get("/api/task").get_json()
+    assert s["rodando"] is False and s["ultimo_sync"] is None and s["tipo"] is None
+
+
+def test_botao_match_roda_sozinho():
+    """O match tem botão próprio: não exige sincronizar antes."""
+    cli, caminho = app_com_dados()
+    conn = db.connect(caminho)
+    conn.execute("DELETE FROM matches")
+    conn.commit()
+    conn.close()
+
+    r = cli.post("/api/match", json={})
+    assert r.status_code == 202
+
+    for _ in range(100):
+        s = cli.get("/api/task").get_json()
+        if not s["rodando"]:
+            break
+        time.sleep(0.1)
+    assert s["tipo"] == "match"
+    # sem AniList nem catálogo o match não roda, mas não pode estourar
+    assert s["erro"] is None, s["erro"]
+    assert s["resultado"] is not None
+
+
+def test_match_nao_exige_credencial_da_crunchyroll():
+    cli, _ = app_com_dados()
+    anterior = os.environ.pop("CR_ETP_RT", None)
+    try:
+        assert cli.post("/api/match", json={}).status_code == 202
+    finally:
+        if anterior is not None:
+            os.environ["CR_ETP_RT"] = anterior
 
 
 def test_stats_distingue_banco_vazio():

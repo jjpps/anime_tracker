@@ -8,11 +8,14 @@ curl equivalente, no Windows).
 
 import collections
 import json
+import logging
 import os
 import re
 
 from .anilist import normalize
 from .config import RAIZ
+
+log = logging.getLogger("anime_tracker.catalog")
 
 DB_PADRAO = ".cache/anime-db.json"
 URL_DOWNLOAD = ("https://github.com/manami-project/anime-offline-database/"
@@ -52,6 +55,7 @@ Trocável por anilist.AniList sem o chamador saber a diferença."""
         with open(caminho, encoding="utf-8") as fh:
             entries = json.load(fh)["data"]
 
+        log.info("catálogo local: %d obras de %s", len(entries), caminho)
         self.media = []
         self.por_token = collections.defaultdict(list)
         for e in entries:
