@@ -2,19 +2,37 @@
 do cliente da API.
 
 Serve para casar temporadas sem depender da API — que hoje responde 403 — e
-para calibrar o matcher contra títulos reais. `make db` baixa o arquivo.
+para calibrar o matcher contra títulos reais. `make db` baixa o arquivo (ou o
+curl equivalente, no Windows).
 """
 
 import collections
 import json
 import os
 import re
-import sys
 
 from .anilist import normalize
+from .config import RAIZ
 
-DB = os.environ.get("ANIME_DB_JSON", ".cache/anime-db.json")
+DB_PADRAO = ".cache/anime-db.json"
+URL_DOWNLOAD = ("https://github.com/manami-project/anime-offline-database/"
+                "releases/download/2026-27/anime-offline-database-minified.json")
 ANILIST_URL = re.compile(r"anilist\.co/anime/(\d+)")
+
+
+class CatalogoAusente(Exception):
+    """Arquivo do catálogo local não encontrado."""
+
+
+def caminho_db(path=None):
+    """Resolvido na chamada e ancorado na raiz, como o caminho do banco.
+
+    Relativo ao cwd faria `match --offline` achar o arquivo só se rodado do
+    diretório certo."""
+    caminho = path or os.environ.get("ANIME_DB_JSON") or DB_PADRAO
+    if os.path.isabs(caminho):
+        return caminho
+    return os.path.join(RAIZ, caminho)
 
 
 class OfflineIndex:
@@ -22,10 +40,17 @@ class OfflineIndex:
 
 Trocável por anilist.AniList sem o chamador saber a diferença."""
 
-    def __init__(self, path=DB):
-        if not os.path.exists(path):
-            sys.exit(f"falta {path} — rode: make db")
-        entries = json.load(open(path))["data"]
+    def __init__(self, path=None):
+        caminho = caminho_db(path)
+        if not os.path.exists(caminho):
+            # exceção, não sys.exit: isso também roda em thread do servidor
+            raise CatalogoAusente(
+                f"catálogo local não encontrado em {caminho}\n"
+                f"  make db\n"
+                f"  ou: curl -L -o {caminho} {URL_DOWNLOAD}"
+            )
+        with open(caminho, encoding="utf-8") as fh:
+            entries = json.load(fh)["data"]
 
         self.media = []
         self.por_token = collections.defaultdict(list)

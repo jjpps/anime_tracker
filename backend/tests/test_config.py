@@ -63,6 +63,29 @@ def test_sem_arquivo_nao_estoura():
     assert load_env("/caminho/que/nao/existe/.env") is None
 
 
+def test_catalogo_ancora_na_raiz():
+    """`match --offline` precisa achar o arquivo de qualquer diretório."""
+    from anime_tracker.catalog import CatalogoAusente, OfflineIndex, caminho_db
+    from anime_tracker.config import RAIZ
+
+    anterior = os.environ.pop("ANIME_DB_JSON", None)
+    try:
+        assert caminho_db() == os.path.join(RAIZ, ".cache/anime-db.json")
+        assert caminho_db("/tmp/x.json") == "/tmp/x.json"
+
+        os.environ["ANIME_DB_JSON"] = "nao-existe.json"
+        try:
+            OfflineIndex()
+            raise AssertionError("deveria avisar que falta o catálogo")
+        except CatalogoAusente as e:
+            # a mensagem tem que ensinar a resolver, inclusive sem make
+            assert "curl" in str(e) and "make db" in str(e)
+    finally:
+        os.environ.pop("ANIME_DB_JSON", None)
+        if anterior is not None:
+            os.environ["ANIME_DB_JSON"] = anterior
+
+
 def test_exemplo_do_repo_e_valido():
     """O .env.example precisa ter todas as chaves que o código lê."""
     raiz = os.path.join(os.path.dirname(__file__), "..", "..")

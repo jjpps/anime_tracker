@@ -46,9 +46,12 @@ def cmd_sync(args, conn):
 
 def cmd_match(args, conn):
     if args.offline:
-        from .catalog import OfflineIndex
+        from .catalog import CatalogoAusente, OfflineIndex
 
-        client = OfflineIndex()
+        try:
+            client = OfflineIndex()
+        except CatalogoAusente as e:
+            sys.exit(str(e))
     else:
         client = AniList()
 
