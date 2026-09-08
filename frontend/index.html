@@ -64,6 +64,14 @@
     border-radius: 6px; color: var(--texto);
   }
   .vazio, .carregando { color: var(--fraco); padding: 32px 0; }
+  .aviso {
+    background: #2a2416; border: 1px solid var(--alerta); border-radius: 8px;
+    padding: 12px 14px; margin-bottom: 16px; font-size: 14px;
+  }
+  .aviso pre {
+    background: var(--bg); padding: 8px 10px; border-radius: 6px;
+    overflow-x: auto; font-size: 12px; margin: 8px 0 6px;
+  }
   #sincronizar {
     padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px;
     border: 1px solid var(--linha); background: #232733; color: var(--texto);
@@ -95,6 +103,8 @@
 
 <script>
 const estado = { aba: "catalog", q: "", stats: null };
+const URL_CATALOGO = "https://github.com/manami-project/anime-offline-database/" +
+  "releases/download/2026-27/anime-offline-database-minified.json";
 const $ = (id) => document.getElementById(id);
 
 const rota = () => estado.aba === "catalog" ? "/api/catalog" : "/api/pending";
@@ -128,7 +138,11 @@ function render(itens) {
 function mensagemVazia() {
   const s = estado.stats;
   if (s && !s.series) return "nenhum dado ainda — clique em Sincronizar";
-  if (s && !s.matched) return "séries importadas, mas nenhuma casada com o AniList ainda — rode o match";
+  if (s && !s.matched) {
+    return s.catalogo_local
+      ? "séries importadas, mas nenhuma casada ainda — clique em Sincronizar"
+      : "séries importadas, mas nenhuma casada: AniList fora do ar e catálogo local ausente";
+  }
   return estado.aba === "catalog"
     ? "nenhuma temporada com correspondência no AniList"
     : "nada pendente: tudo já foi revisado";
@@ -275,6 +289,20 @@ function acompanharSync() {
     }
     await Promise.all([carregar(), resumo()]);
   }, 1000);
+}
+
+function avisarSemMatch() {
+  const aviso = document.createElement("div");
+  aviso.className = "aviso";
+  aviso.innerHTML =
+    "<strong>Séries sincronizadas, mas nenhuma foi casada com o AniList.</strong>" +
+    "<br>A API do AniList está indisponível e o catálogo local não foi encontrado. " +
+    "Baixe-o uma vez e sincronize de novo:" +
+    "<pre>curl -L -o .cache/anime-db.json " + URL_CATALOGO + "</pre>" +
+    "No Windows use <code>curl.exe</code>, e crie a pasta antes com <code>mkdir .cache</code>.";
+  const main = document.querySelector("main");
+  main.querySelector(".aviso")?.remove();
+  main.prepend(aviso);
 }
 
 async function resumo() {

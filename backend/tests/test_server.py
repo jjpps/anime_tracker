@@ -103,6 +103,7 @@ def test_stats():
     s = cli.get("/api/stats").get_json()
     assert s["pending"] == 2 and s["confirmed"] == 0
     assert s["anilist_conectado"] is False
+    assert "catalogo_local" in s, "a UI precisa saber se dá para casar offline"
 
 
 def test_callback_recusa_state_errado():

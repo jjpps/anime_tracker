@@ -49,9 +49,13 @@ def create_app(db_path=None):
 
     @app.get("/api/stats")
     def stats():
+        from .catalog import caminho_db
+
         with conn() as c:
             dados = db.stats(c)
             dados["anilist_conectado"] = bool(db.get_setting(c, oauth.TOKEN_KEY))
+        # sem AniList e sem catálogo local não há como casar; a UI precisa saber
+        dados["catalogo_local"] = os.path.exists(caminho_db())
         return jsonify(dados)
 
     @app.get("/api/catalog")
