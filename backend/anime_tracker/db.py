@@ -8,7 +8,20 @@ import os
 import sqlite3
 from datetime import datetime, timezone
 
+from .config import RAIZ
+
 DB_PADRAO = "anime_tracker.db"
+
+
+def resolve_path(path=None):
+    """Caminho do banco, sempre ancorado na raiz do projeto.
+
+    Relativo ao cwd criaria um banco por diretório de onde se roda: `sync` na
+    raiz e `serve` em backend/ dariam bancos diferentes e tela vazia."""
+    caminho = path or os.environ.get("ANIME_TRACKER_DB") or DB_PADRAO
+    if caminho == ":memory:" or os.path.isabs(caminho):
+        return caminho
+    return os.path.join(RAIZ, caminho)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS series (
@@ -92,7 +105,7 @@ def agora():
 
 def connect(path=None):
     # resolvido na chamada, não no import: o .env é carregado depois dos imports
-    conn = sqlite3.connect(path or os.environ.get("ANIME_TRACKER_DB") or DB_PADRAO)
+    conn = sqlite3.connect(resolve_path(path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)

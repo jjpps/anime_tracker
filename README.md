@@ -52,11 +52,15 @@ python -m venv .venv
 
 copy .env.example .env      # e preencha com os valores reais
 
-cd backend
-..\.venv\Scripts\python -m anime_tracker sync
-..\.venv\Scripts\python -m anime_tracker match
-..\.venv\Scripts\python -m anime_tracker serve
+.venv\Scripts\python run.py sync
+.venv\Scripts\python run.py match
+.venv\Scripts\python run.py serve
 ```
+
+`run.py` roda da raiz do repositório. O equivalente sem ele é
+`cd backend` e `python -m anime_tracker <comando>` — a raiz do repo e o pacote
+têm o mesmo nome, então `python -m anime_tracker` na raiz acha a pasta e falha
+com `No module named anime_tracker`.
 
 O `.env` é lido automaticamente; não precisa exportar nada. Uma variável
 definida no shell sobrepõe o arquivo, se você quiser trocar um valor pontual.

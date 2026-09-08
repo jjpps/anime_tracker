@@ -39,6 +39,22 @@ def match(season_number, anilist_id, title, conf, season_id=None):
 IDS = {1: "S1", 3: "S3"}
 
 
+def test_caminho_do_banco_ancora_na_raiz():
+    """Rodar de outro diretório não pode criar um banco novo e vazio."""
+    from anime_tracker.config import RAIZ
+
+    anterior = os.environ.get("ANIME_TRACKER_DB")
+    os.environ["ANIME_TRACKER_DB"] = "anime_tracker.db"
+    try:
+        assert db.resolve_path() == os.path.join(RAIZ, "anime_tracker.db")
+        assert db.resolve_path("/tmp/x.db") == "/tmp/x.db"   # absoluto passa direto
+        assert db.resolve_path(":memory:") == ":memory:"
+    finally:
+        os.environ.pop("ANIME_TRACKER_DB", None)
+        if anterior is not None:
+            os.environ["ANIME_TRACKER_DB"] = anterior
+
+
 def test_grava_series_e_temporadas():
     conn = novo_banco()
     assert db.stats(conn)["series"] == 1
