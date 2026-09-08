@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS series (
     total_seasons   INTEGER,
     added_at        TEXT,
     is_favorite     INTEGER NOT NULL DEFAULT 0,
+    in_watchlist    INTEGER NOT NULL DEFAULT 1,
     synced_at       TEXT NOT NULL
 );
 
@@ -49,6 +50,7 @@ CREATE INDEX IF NOT EXISTS idx_seasons_series ON seasons(series_id);
 CREATE TABLE IF NOT EXISTS watch_history (
     episode_id      TEXT PRIMARY KEY,
     series_id       TEXT NOT NULL,
+    series_title    TEXT,
     season_number   INTEGER,
     episode_number  REAL,
     episode_title   TEXT,
@@ -103,12 +105,29 @@ def agora():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+# colunas acrescentadas depois: CREATE TABLE IF NOT EXISTS não altera tabela
+# existente, então banco antigo precisa do ALTER
+COLUNAS_NOVAS = [
+    ("series", "in_watchlist", "INTEGER NOT NULL DEFAULT 1"),
+    ("watch_history", "series_title", "TEXT"),
+]
+
+
+def migrar(conn):
+    for tabela, coluna, tipo in COLUNAS_NOVAS:
+        existentes = {r["name"] for r in conn.execute(f"PRAGMA table_info({tabela})")}
+        if existentes and coluna not in existentes:
+            conn.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
+    conn.commit()
+
+
 def connect(path=None):
     # resolvido na chamada, não no import: o .env é carregado depois dos imports
     conn = sqlite3.connect(resolve_path(path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
+    migrar(conn)
     return conn
 
 
@@ -118,15 +137,24 @@ def save_series(conn, series):
     conn.executemany(
         """INSERT INTO series
              (series_id, title, availability, total_episodes, total_seasons,
-              added_at, is_favorite, synced_at)
+              added_at, is_favorite, in_watchlist, synced_at)
            VALUES (:series_id, :series_title, :availability, :total_episodes,
-                   :total_seasons, :added_at, :is_favorite, :synced_at)
+                   :total_seasons, :added_at, :is_favorite, :in_watchlist, :synced_at)
            ON CONFLICT(series_id) DO UPDATE SET
              title=excluded.title, availability=excluded.availability,
              total_episodes=excluded.total_episodes,
              total_seasons=excluded.total_seasons,
-             is_favorite=excluded.is_favorite, synced_at=excluded.synced_at""",
-        [{**s, "is_favorite": int(s["is_favorite"]), "synced_at": agora()} for s in series],
+             is_favorite=excluded.is_favorite,
+             in_watchlist=excluded.in_watchlist, synced_at=excluded.synced_at""",
+        [
+            {
+                "in_watchlist": True,  # sobreposto se a série trouxer o campo
+                **s,
+                "is_favorite": int(s["is_favorite"]),
+                "synced_at": agora(),
+            }
+            for s in series
+        ],
     )
     conn.commit()
 
@@ -159,11 +187,12 @@ def save_history(conn, episodes):
     """Histórico é append-only do lado da CR; conflito só reescreve o progresso."""
     conn.executemany(
         """INSERT INTO watch_history
-             (episode_id, series_id, season_number, episode_number,
+             (episode_id, series_id, series_title, season_number, episode_number,
               episode_title, watched_at, fully_watched)
-           VALUES (:episode_id, :series_id, :season_number, :episode_number,
-                   :episode_title, :watched_at, :fully_watched)
+           VALUES (:episode_id, :series_id, :series_title, :season_number,
+                   :episode_number, :episode_title, :watched_at, :fully_watched)
            ON CONFLICT(episode_id) DO UPDATE SET
+             series_title=excluded.series_title,
              watched_at=excluded.watched_at,
              fully_watched=excluded.fully_watched""",
         [{**e, "fully_watched": int(e["fully_watched"])} for e in episodes],

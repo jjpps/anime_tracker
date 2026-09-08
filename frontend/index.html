@@ -64,6 +64,12 @@
     border-radius: 6px; color: var(--texto);
   }
   .vazio, .carregando { color: var(--fraco); padding: 32px 0; }
+  #sincronizar {
+    padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px;
+    border: 1px solid var(--linha); background: #232733; color: var(--texto);
+  }
+  #sincronizar:hover:not(:disabled) { border-color: var(--acento); }
+  #sincronizar:disabled { opacity: .6; cursor: default; }
   #conectar {
     padding: 6px 12px; border-radius: 6px; text-decoration: none;
     font-size: 13px; border: 1px solid var(--linha); color: var(--texto);
@@ -78,6 +84,7 @@
     <button id="tab-pending">Catálogo a revisar</button>
   </nav>
   <span id="resumo"></span>
+  <button id="sincronizar">Sincronizar</button>
   <a id="conectar" href="/auth/anilist">Conectar AniList</a>
 </header>
 
@@ -205,6 +212,59 @@ function acoes(r, botoes, comCorrecao) {
   return box;
 }
 
+let pollSync;
+
+async function sincronizar(force = false) {
+  const botao = $("sincronizar");
+  botao.disabled = true;
+  const resp = await fetch("/api/sync", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ force }),
+  });
+
+  if (resp.status === 429) {
+    const { minutos_ate_liberar } = await resp.json();
+    botao.disabled = false;
+    // o TTL evita repetição acidental, mas o clique explícito é intenção
+    if (confirm(`Sincronizado há pouco (libera em ${minutos_ate_liberar} min). Sincronizar mesmo assim?`)) {
+      return sincronizar(true);
+    }
+    return;
+  }
+  if (!resp.ok) {
+    alert("não foi possível sincronizar: " + ((await resp.json()).erro || resp.status));
+    botao.disabled = false;
+    return;
+  }
+  acompanharSync();
+}
+
+function acompanharSync() {
+  clearInterval(pollSync);
+  pollSync = setInterval(async () => {
+    let s;
+    try { s = await (await fetch("/api/sync")).json(); } catch { return; }
+
+    if (s.rodando) {
+      const passo = s.total ? ` ${s.feito}/${s.total}` : "";
+      $("sincronizar").textContent = `${s.etapa || "sincronizando"}${passo}...`;
+      return;
+    }
+
+    clearInterval(pollSync);
+    $("sincronizar").textContent = "Sincronizar";
+    $("sincronizar").disabled = false;
+    if (s.erro) alert("sync falhou: " + s.erro);
+    else if (s.resultado) {
+      const r = s.resultado;
+      $("sincronizar").title =
+        `${r.episodios} episódios novos · ${r.series_atualizadas} séries atualizadas`;
+    }
+    await Promise.all([carregar(), resumo()]);
+  }, 1000);
+}
+
 async function resumo() {
   try {
     const s = await (await fetch("/api/stats")).json();
@@ -232,8 +292,14 @@ $("busca").oninput = (e) => {
   debounce = setTimeout(carregar, 250);
 };
 
+$("sincronizar").onclick = () => sincronizar(false);
+
 resumo();
 carregar();
+// se um sync já estiver rodando (outra aba, ou reload no meio), acompanha
+fetch("/api/sync").then(r => r.json()).then(s => {
+  if (s.rodando) { $("sincronizar").disabled = true; acompanharSync(); }
+}).catch(() => {});
 </script>
 </body>
 </html>

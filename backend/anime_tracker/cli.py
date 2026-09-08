@@ -14,7 +14,7 @@ import argparse
 import os
 import sys
 
-from . import db
+from . import db, sync
 from .config import load_env
 from .anilist import AniList, AniListError, match_seasons
 from .crunchyroll import Crunchyroll, CrunchyrollError
@@ -33,19 +33,15 @@ def _progresso(i, total, texto=""):
 
 
 def cmd_sync(args, conn):
-    cr = _cr()
-    series = list(cr.watchlist())
-    db.save_series(conn, series)
-
-    episodios = list(cr.watch_history())
-    db.save_history(conn, episodios)
-
-    disponiveis = [s for s in series if s["availability"] == "available"]
-    for i, s in enumerate(disponiveis, 1):
-        _progresso(i, len(disponiveis), s["series_title"])
-        db.save_seasons(conn, s["series_id"], cr.seasons(s["series_id"]))
+    try:
+        r = sync.run(_cr(), conn, force=args.force, ttl_horas=args.ttl,
+                     progresso=lambda texto, i, total: _progresso(i, total, texto))
+    except sync.SyncBloqueado as e:
+        sys.exit(f"{e}. Use --force para ignorar o intervalo.")
     print("\r" + " " * 60 + "\r", end="", file=sys.stderr)
-    print(f"{len(series)} séries, {len(episodios)} episódios, temporadas de {len(disponiveis)}")
+    modo = "incremental" if r["incremental"] else "completo"
+    print(f"sync {modo}: {r['episodios']} episódios novos, {r['series']} séries, "
+          f"{r['series_atualizadas']} com temporadas rebuscadas ({r['temporadas']} temporadas)")
 
 
 def cmd_match(args, conn):
@@ -161,7 +157,10 @@ def main(argv=None):
     parser.add_argument("--db", default=None, help="caminho do sqlite (padrão: ANIME_TRACKER_DB)")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("sync", help="importa watchlist, histórico e temporadas da Crunchyroll")
+    p = sub.add_parser("sync", help="importa da Crunchyroll o que mudou desde o último sync")
+    p.add_argument("--force", action="store_true", help="ignora o intervalo mínimo")
+    p.add_argument("--ttl", type=int, default=sync.TTL_HORAS,
+                   help="horas mínimas entre syncs (padrão: %(default)s)")
 
     p = sub.add_parser("match", help="casa temporadas da CR com obras do AniList")
     p.add_argument("filtro", nargs="?", default="", help="filtra por trecho do título")

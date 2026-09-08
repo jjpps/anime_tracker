@@ -76,14 +76,21 @@ class Crunchyroll:
 
     # --- conteúdo ---
 
-    def watch_history(self, locale="en-US", page_size=100):
+    def watch_history(self, locale="en-US", page_size=100, since=None):
         """Itera o histórico de episódios assistidos.
+
+        `since` (ISO-8601) para o percurso ao alcançar o que já se conhece: a CR
+        devolve o histórico ordenado por date_played desc, então o que está
+        abaixo da marca já foi visto. Reassistir sobe o item para o topo, então
+        esse caso é coberto sem tratamento especial.
 
         Parte dos itens vem sem `panel` (conteúdo tirado do catálogo). Eles ainda
         trazem os ids no nível do item, então dá para recuperar pelo menos a
         série — ignorá-los perderia ~14% do histórico."""
         orfaos = []
         for item in self._paginate("watch-history", dict, locale, page_size):
+            if since and (item.get("date_played") or "") < since:
+                break
             if item.get("panel"):
                 yield parse_history_item(item)
             else:

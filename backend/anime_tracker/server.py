@@ -7,10 +7,12 @@ que o frontend consome.
 import contextlib
 import os
 import secrets
+import threading
 
 from flask import Flask, jsonify, redirect, request, send_from_directory
 
-from . import db, oauth
+from . import db, oauth, sync
+from .crunchyroll import Crunchyroll, CrunchyrollError
 from .config import load_env
 
 FRONTEND = os.path.join(os.path.dirname(__file__), "..", "..", "frontend")
@@ -27,6 +29,11 @@ def create_app(db_path=None):
 
     def linhas(rows):
         return [dict(r) for r in rows]
+
+    # estado do sync em andamento; só uma thread por vez
+    estado_sync = {"rodando": False, "etapa": "", "feito": 0, "total": 0,
+                   "resultado": None, "erro": None}
+    trava = threading.Lock()
 
     # --- frontend ---
 
@@ -77,6 +84,51 @@ def create_app(db_path=None):
             return jsonify({"erro": "season_id não encontrado"}), 404
         return jsonify({"season_id": season_id, "status": status})
 
+    @app.get("/api/sync")
+    def sync_status():
+        with conn() as c:
+            falta = sync.minutos_ate_liberar(c, _ttl())
+            ultimo = db.get_setting(c, sync.ULTIMO_SYNC)
+        return jsonify({**estado_sync, "minutos_ate_liberar": falta, "ultimo_sync": ultimo})
+
+    @app.post("/api/sync")
+    def sync_start():
+        corpo = request.get_json(silent=True) or {}
+        force = bool(corpo.get("force"))
+
+        with trava:
+            if estado_sync["rodando"]:
+                return jsonify({"erro": "sync já em andamento"}), 409
+            if not force:
+                with conn() as c:
+                    falta = sync.minutos_ate_liberar(c, _ttl())
+                if falta:
+                    return jsonify({"erro": f"sincronizado há pouco; tente em {falta} min",
+                                    "minutos_ate_liberar": falta}), 429
+            if not os.environ.get("CR_ETP_RT"):
+                return jsonify({"erro": "defina CR_ETP_RT no .env"}), 500
+            estado_sync.update(rodando=True, etapa="conectando", feito=0, total=0,
+                               resultado=None, erro=None)
+
+        threading.Thread(target=_rodar_sync, args=(force,), daemon=True).start()
+        return jsonify({"iniciado": True}), 202
+
+    def _rodar_sync(force):
+        def progresso(texto, feito, total):
+            estado_sync.update(etapa=texto, feito=feito, total=total)
+
+        try:
+            cr = Crunchyroll().login(os.environ["CR_ETP_RT"])
+            with conn() as c:
+                estado_sync["resultado"] = sync.run(cr, c, force=force,
+                                                    ttl_horas=_ttl(), progresso=progresso)
+        except (CrunchyrollError, sync.SyncBloqueado) as e:
+            estado_sync["erro"] = str(e)
+        except Exception as e:  # a thread não pode morrer calada
+            estado_sync["erro"] = f"{type(e).__name__}: {e}"
+        finally:
+            estado_sync.update(rodando=False, etapa="")
+
     # --- OAuth do AniList ---
 
     @app.get("/auth/anilist")
@@ -112,6 +164,13 @@ def create_app(db_path=None):
         return redirect("/?anilist=ok")
 
     return app
+
+
+def _ttl():
+    try:
+        return int(os.environ.get("SYNC_TTL_HORAS", sync.TTL_HORAS))
+    except ValueError:
+        return sync.TTL_HORAS
 
 
 def _filtrar(rows, q):

@@ -42,6 +42,26 @@ make serve                     # http://localhost:8000
 Comandos: `sync`, `match`, `review [list|done|confirm|reject]`, `pending`,
 `stats`, `serve`.
 
+## Sync incremental
+
+`sync` (ou o botão **Sincronizar** na UI) traz só o que mudou:
+
+1. **histórico** — a CR devolve ordenado por `date_played` desc, então o
+   percurso para ao cruzar a data do episódio mais recente já gravado (com 1
+   dia de folga). ~50 páginas viram 1-2.
+2. **escopo** — watchlist ∪ séries distintas do histórico (145 hoje),
+   resolvidas em lote via `cms/objects`: 3 chamadas trazem
+   `episode_count`/`season_count` de todas.
+3. **temporadas** — só rebuscadas se a série nunca sincronizou ou se a
+   contagem mudou. Episódio novo incrementa `episode_count`, então estreia é
+   detectada sem custo extra. É a parte cara: 1 chamada por temporada.
+
+`season.is_complete` da CR **não** serve como sinal: vem `False` até para
+temporada encerrada há anos.
+
+Intervalo mínimo entre syncs: 6h (`SYNC_TTL_HORAS`), com `--force` / confirmação
+na UI para ignorar.
+
 ### Windows (PowerShell)
 
 Não há `make` no Windows; os comandos equivalentes:

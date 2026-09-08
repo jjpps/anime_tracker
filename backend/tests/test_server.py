@@ -9,7 +9,9 @@ import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from anime_tracker import db, oauth  # noqa: E402
+from datetime import datetime, timezone  # noqa: E402
+
+from anime_tracker import db, oauth, sync  # noqa: E402
 from anime_tracker.server import create_app  # noqa: E402
 
 SERIE = {
@@ -119,6 +121,38 @@ def test_authorize_url():
     assert url.startswith(oauth.AUTHORIZE + "?")
     assert "client_id=123" in url and "response_type=code" in url and "state=xyz" in url
     assert "redirect_uri=http%3A%2F%2Flocalhost%3A8000%2Fcb" in url
+
+
+def test_sync_respeita_ttl():
+    """Botão + TTL: clique repetido não pode disparar sync de novo."""
+    cli, caminho = app_com_dados()
+    conn = db.connect(caminho)
+    db.set_setting(conn, sync.ULTIMO_SYNC,
+                   datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    conn.close()
+
+    r = cli.post("/api/sync", json={})
+    assert r.status_code == 429
+    assert r.get_json()["minutos_ate_liberar"] > 0
+
+    assert cli.get("/api/sync").get_json()["rodando"] is False
+
+
+def test_sync_sem_credencial_nao_inicia():
+    cli, _ = app_com_dados()
+    anterior = os.environ.pop("CR_ETP_RT", None)
+    try:
+        r = cli.post("/api/sync", json={"force": True})
+        assert r.status_code == 500 and "CR_ETP_RT" in r.get_json()["erro"]
+    finally:
+        if anterior is not None:
+            os.environ["CR_ETP_RT"] = anterior
+
+
+def test_status_do_sync():
+    cli, _ = app_com_dados()
+    s = cli.get("/api/sync").get_json()
+    assert s["rodando"] is False and s["ultimo_sync"] is None
 
 
 def test_frontend_servido():
