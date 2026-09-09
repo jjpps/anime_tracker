@@ -71,6 +71,10 @@ CREATE TABLE IF NOT EXISTS matches (
     anilist_title    TEXT,
     anilist_episodes INTEGER,
     anilist_url      TEXT,
+    mal_id           INTEGER,
+    mal_title        TEXT,
+    mal_episodes     INTEGER,
+    mal_checked_at   TEXT,
     confidence       REAL NOT NULL DEFAULT 0,
     duplicate_of     INTEGER,
     review_status    TEXT NOT NULL DEFAULT 'pending'
@@ -126,6 +130,10 @@ def agora():
 COLUNAS_NOVAS = [
     ("series", "in_watchlist", "INTEGER NOT NULL DEFAULT 1"),
     ("watch_history", "series_title", "TEXT"),
+    ("matches", "mal_id", "INTEGER"),
+    ("matches", "mal_title", "TEXT"),
+    ("matches", "mal_episodes", "INTEGER"),
+    ("matches", "mal_checked_at", "TEXT"),
 ]
 
 
@@ -245,12 +253,56 @@ def save_matches(conn, resultados):
              anilist_id=excluded.anilist_id, anilist_title=excluded.anilist_title,
              anilist_episodes=excluded.anilist_episodes,
              anilist_url=excluded.anilist_url, confidence=excluded.confidence,
-             duplicate_of=excluded.duplicate_of, matched_at=excluded.matched_at
+             duplicate_of=excluded.duplicate_of, matched_at=excluded.matched_at,
+             -- o mal_id foi derivado do anilist_id: se o alvo mudou, ele
+             -- ficou obsoleto e manter apontaria para o anime errado
+             mal_id=CASE WHEN excluded.anilist_id IS matches.anilist_id
+                         THEN matches.mal_id ELSE NULL END,
+             mal_title=CASE WHEN excluded.anilist_id IS matches.anilist_id
+                            THEN matches.mal_title ELSE NULL END,
+             mal_episodes=CASE WHEN excluded.anilist_id IS matches.anilist_id
+                               THEN matches.mal_episodes ELSE NULL END,
+             mal_checked_at=CASE WHEN excluded.anilist_id IS matches.anilist_id
+                                 THEN matches.mal_checked_at ELSE NULL END
            WHERE matches.review_status = 'pending'""",
         linhas,
     )
     conn.commit()
     return len(linhas)
+
+
+def set_mal_ids(conn, pares):
+    """Grava o mal_id derivado do anilist_id. `pares`: [(season_id, mal_id)]."""
+    conn.executemany("UPDATE matches SET mal_id = ? WHERE season_id = ?",
+                     [(mal_id, season_id) for season_id, mal_id in pares])
+    conn.commit()
+    return len(pares)
+
+
+def set_mal_check(conn, season_id, titulo, episodios):
+    """Registra o que a API do MAL respondeu para esse id."""
+    conn.execute(
+        "UPDATE matches SET mal_title = ?, mal_episodes = ?, mal_checked_at = ? "
+        "WHERE season_id = ?",
+        [titulo, episodios, agora(), season_id],
+    )
+    conn.commit()
+
+
+def matches_para_exportar(conn):
+    """Tudo que tem mal_id e não foi rejeitado, com o contexto da temporada."""
+    return conn.execute(
+        """SELECT m.season_id, m.mal_id, m.mal_title, m.mal_episodes,
+                  m.anilist_id, m.anilist_title, m.anilist_episodes,
+                  m.review_status, m.confidence,
+                  s.series_id, s.season_number, s.total_episodes AS cr_episodes,
+                  se.title AS series_title
+             FROM matches m
+             JOIN seasons s USING (season_id)
+             JOIN series se USING (series_id)
+            WHERE m.mal_id IS NOT NULL AND m.review_status != 'rejected'
+            ORDER BY se.title, s.season_number"""
+    ).fetchall()
 
 
 def set_review(conn, season_id, status, anilist_id=None):

@@ -21,10 +21,44 @@ DB_PADRAO = ".cache/anime-db.json"
 URL_DOWNLOAD = ("https://github.com/manami-project/anime-offline-database/"
                 "releases/download/2026-27/anime-offline-database-minified.json")
 ANILIST_URL = re.compile(r"anilist\.co/anime/(\d+)")
+MAL_URL = re.compile(r"myanimelist\.net/anime/(\d+)")
 
 
 class CatalogoAusente(Exception):
     """Arquivo do catálogo local não encontrado."""
+
+
+def _id(padrao, sources):
+    for s in sources:
+        achado = padrao.search(s)
+        if achado:
+            return int(achado.group(1))
+    return None
+
+
+def mapa_anilist_para_mal(path=None):
+    """anilist_id -> (mal_id, título, episódios, tipo).
+
+    O catálogo cruza os dois ids, o que evita depender da busca por título do
+    MAL — que hoje está fora e, mesmo no ar, rejeita títulos longos."""
+    caminho = caminho_db(path)
+    if not os.path.exists(caminho):
+        raise CatalogoAusente(
+            f"catálogo local não encontrado em {caminho}\n"
+            f"  make db\n"
+            f"  ou: curl -L -o {caminho} {URL_DOWNLOAD}"
+        )
+    with open(caminho, encoding="utf-8") as fh:
+        entries = json.load(fh)["data"]
+
+    mapa = {}
+    for e in entries:
+        anilist_id = _id(ANILIST_URL, e["sources"])
+        mal_id = _id(MAL_URL, e["sources"])
+        if anilist_id and mal_id:
+            mapa[anilist_id] = (mal_id, e.get("title"), e.get("episodes"), e.get("type"))
+    log.info("mapa anilist->mal: %d obras cruzadas de %d", len(mapa), len(entries))
+    return mapa
 
 
 def caminho_db(path=None):

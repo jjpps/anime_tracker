@@ -69,6 +69,45 @@ def cmd_match(args, conn):
     cmd_stats(args, conn)
 
 
+def cmd_mal(args, conn):
+    """Resolve mal_id pelo catálogo e confere contra a API do MyAnimeList."""
+    from .catalog import CatalogoAusente, mapa_anilist_para_mal
+    from .mal import MALClient, double_check, resolver_ids
+
+    avisar = lambda texto, i, total: _progresso(i, total, texto)  # noqa: E731
+    try:
+        r = resolver_ids(conn, mapa_anilist_para_mal(), progresso=avisar)
+    except CatalogoAusente as e:
+        sys.exit(str(e))
+    print("\r" + " " * 60 + "\r", end="", file=sys.stderr)
+    print(f"mal_id: {r['resolvidos']} resolvidos, {r['sem_mapa']} sem correspondência no catálogo")
+
+    if args.so_ids:
+        return
+
+    cliente = MALClient(os.environ.get("MAL_CLIENT_ID"))
+    rel = double_check(conn, cliente, limite=args.limite, revalidar=args.revalidar,
+                       progresso=avisar)
+    print("\r" + " " * 60 + "\r", end="", file=sys.stderr)
+    print(f"double check ({rel['fonte']}): {rel['checados']} conferidos, "
+          f"{len(rel['divergentes'])} divergentes, {len(rel['erros'])} com erro")
+    for d in rel["divergentes"][: args.mostrar]:
+        print(f"  {d['serie']} T{d['temporada']} (mal {d['mal_id']})")
+        print(f"    local: {d['anilist']}\n    MAL:   {d['mal']}\n    -> {d['motivo']}")
+    if len(rel["divergentes"]) > args.mostrar:
+        print(f"  ... e mais {len(rel['divergentes']) - args.mostrar}")
+
+
+def cmd_export(args, conn):
+    from .export_mal import exportar
+
+    r = exportar(conn, args.saida, apenas_confirmados=args.confirmados)
+    print(f"{r['arquivo']}: {r['obras']} obras de {r['temporadas']} temporadas")
+    print(f"  {r['completas']} completas, {r['assistindo']} assistindo, "
+          f"{r['planejadas']} a assistir")
+    print("Importe em myanimelist.net/import.php ou anilist.co/settings/import")
+
+
 def cmd_review(args, conn):
     if args.acao in ("confirm", "reject"):
         if not args.season_id:
@@ -157,6 +196,17 @@ def main(argv=None):
     p.add_argument("--todas", action="store_true",
                    help="recasa também o que já tem correspondência (revisado é preservado)")
 
+    p = sub.add_parser("mal", help="resolve mal_id e confere contra a API do MyAnimeList")
+    p.add_argument("--so-ids", action="store_true", help="só resolve os ids, sem consultar a API")
+    p.add_argument("--revalidar", action="store_true", help="reconfere o que já foi conferido")
+    p.add_argument("--limite", type=int, default=None, help="quantas temporadas conferir")
+    p.add_argument("--mostrar", type=int, default=15, help="quantas divergências listar")
+
+    p = sub.add_parser("export", help="gera o XML do MyAnimeList para importar")
+    p.add_argument("--saida", default="animelist.xml")
+    p.add_argument("--confirmados", action="store_true",
+                   help="exporta só os matches confirmados na revisão")
+
     p = sub.add_parser("review", help="fila de revisão dos matches")
     p.add_argument("acao", nargs="?", default="list", choices=["list", "done", "confirm", "reject"])
     p.add_argument("season_id", nargs="?")
@@ -178,8 +228,9 @@ def main(argv=None):
     load_env()  # antes de qualquer leitura de os.environ
     conn = db.connect(args.db)
     try:
-        {"sync": cmd_sync, "match": cmd_match, "review": cmd_review,
-         "pending": cmd_pending, "stats": cmd_stats, "serve": cmd_serve}[args.cmd](args, conn)
+        {"sync": cmd_sync, "match": cmd_match, "review": cmd_review, "mal": cmd_mal,
+         "export": cmd_export, "pending": cmd_pending, "stats": cmd_stats,
+         "serve": cmd_serve}[args.cmd](args, conn)
     except AniListError as e:
         # falha da API deles não é bug nosso: mensagem clara em vez de traceback
         sys.exit(f"\nAniList indisponível: {e}\n"

@@ -92,7 +92,7 @@ def test_exemplo_do_repo_e_valido():
     with open(os.path.join(raiz, ".env.example"), encoding="utf-8") as fh:
         chaves = parse_env(fh.read())
     for esperada in ("CR_ETP_RT", "ANILIST_CLIENT_ID", "ANILIST_CLIENT_SECRET",
-                     "ANILIST_REDIRECT_URI", "ANIME_TRACKER_DB"):
+                     "ANILIST_REDIRECT_URI", "ANIME_TRACKER_DB", "MAL_CLIENT_ID"):
         assert esperada in chaves, f"{esperada} faltando no .env.example"
 
 

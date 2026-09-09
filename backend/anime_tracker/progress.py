@@ -14,6 +14,24 @@ def watched_by_season(history):
     return watched
 
 
+def progresso_da_temporada(assistidos, total_da_obra=None):
+    """Progresso a exportar para MAL/AniList, a partir do nosso conjunto.
+
+    Progresso lá é "assisti até o episódio N", então o maior episódio vale mais
+    que a contagem — One Piece numera de forma absoluta (1173), e contar os
+    episódios de um arco daria um número sem sentido.
+
+    O teto existe porque a Crunchyroll agrupa o que o MAL divide: a T1 de
+    Mushoku tem 24 episódios na CR e 11 na obra correspondente. Exportar 24
+    contra uma obra de 11 seria rejeitado ou gravaria lixo."""
+    if not assistidos:
+        return 0
+    maior = int(max(assistidos))
+    if total_da_obra and total_da_obra > 0:
+        return min(maior, total_da_obra)
+    return maior
+
+
 def series_status(series, seasons, watched):
     """Estado de cada temporada de uma série: assistidos vs total do catálogo."""
     out = []

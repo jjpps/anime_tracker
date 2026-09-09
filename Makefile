@@ -12,6 +12,7 @@ test:
 	cd $(BACKEND) && $(PY) tests/test_config.py
 	cd $(BACKEND) && $(PY) tests/test_db.py
 	cd $(BACKEND) && $(PY) tests/test_server.py
+	cd $(BACKEND) && $(PY) tests/test_mal.py
 	cd $(BACKEND) && $(PY) tests/test_ratelimit.py
 	cd $(BACKEND) && $(PY) tests/test_sync.py
 	cd $(BACKEND) && $(PY) anime_tracker/crunchyroll.py
