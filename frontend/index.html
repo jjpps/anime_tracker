@@ -108,8 +108,6 @@
 
 <script>
 const estado = { aba: "catalog", q: "", stats: null };
-const URL_CATALOGO = "https://github.com/manami-project/anime-offline-database/" +
-  "releases/download/2026-27/anime-offline-database-minified.json";
 const $ = (id) => document.getElementById(id);
 
 const rota = () => estado.aba === "catalog" ? "/api/catalog" : "/api/pending";
@@ -366,10 +364,9 @@ function mostrarAviso(html, classe = "aviso") {
 function avisarSemMatch() {
   mostrarAviso(
     "<strong>Séries sincronizadas, mas nenhuma foi casada com o AniList.</strong>" +
-    "<br>A API do AniList está indisponível e o catálogo local não foi encontrado. " +
-    "Baixe-o uma vez e sincronize de novo:" +
-    "<pre>curl -L -o .cache/anime-db.json " + URL_CATALOGO + "</pre>" +
-    "No Windows use <code>curl.exe</code>, e crie a pasta antes com <code>mkdir .cache</code>.");
+    "<br>A API do AniList está indisponível e o download do catálogo local falhou." +
+    " Verifique a conexão e sincronize de novo — o arquivo é baixado sozinho na" +
+    " primeira vez (62 MB).");
 }
 
 async function resumo() {

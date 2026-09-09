@@ -46,24 +46,22 @@ def cmd_sync(args, conn):
     if r["fonte_match"]:
         print(f"match ({r['fonte_match']}): {r['matches']} temporadas casadas")
     else:
-        print("match não rodou: AniList fora do ar e catálogo local ausente (make db)")
+        print("match não rodou: AniList fora do ar e o download do catálogo falhou")
 
 
 def cmd_match(args, conn):
     matcher = sync.AUTO
     if args.offline:
-        from .catalog import CatalogoAusente, OfflineIndex
+        from .catalog import OfflineIndex, garantir
 
-        try:
-            matcher = OfflineIndex()
-        except CatalogoAusente as e:
-            sys.exit(str(e))
+        garantir(progresso=lambda t, i, n: _progresso(i, n, t))
+        matcher = OfflineIndex()
 
     r = sync.rodar_match(conn, matcher=matcher, todas=args.todas, filtro=args.filtro,
                          progresso=lambda texto, i, total: _progresso(i, total, texto))
     print("\r" + " " * 60 + "\r", end="", file=sys.stderr)
     if r["fonte_match"] is None and matcher is sync.AUTO:
-        sys.exit("AniList fora do ar e catálogo local ausente — rode `make db`")
+        sys.exit("AniList fora do ar e o download do catálogo local falhou")
     print(f"{r['matches']} temporadas casadas em {r['alvos']} séries"
           + (f" (fonte: {r['fonte_match']})" if r["fonte_match"] else ""))
     cmd_stats(args, conn)
@@ -71,14 +69,12 @@ def cmd_match(args, conn):
 
 def cmd_mal(args, conn):
     """Resolve mal_id pelo catálogo e confere contra a API do MyAnimeList."""
-    from .catalog import CatalogoAusente, mapa_anilist_para_mal
+    from .catalog import garantir, mapa_anilist_para_mal
     from .mal import MALClient, double_check, resolver_ids
 
     avisar = lambda texto, i, total: _progresso(i, total, texto)  # noqa: E731
-    try:
-        r = resolver_ids(conn, mapa_anilist_para_mal(), progresso=avisar)
-    except CatalogoAusente as e:
-        sys.exit(str(e))
+    garantir(progresso=avisar)  # baixa o catálogo na primeira vez
+    r = resolver_ids(conn, mapa_anilist_para_mal(), progresso=avisar)
     print("\r" + " " * 60 + "\r", end="", file=sys.stderr)
     print(f"mal_id: {r['resolvidos']} resolvidos, {r['sem_mapa']} sem correspondência no catálogo")
 

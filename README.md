@@ -31,7 +31,7 @@ python -m venv .venv && .venv/bin/pip install -r backend/requirements.txt
 
 cp .env.example .env        # e preencha com os valores reais
 make sync                      # importa watchlist, histórico e temporadas
-make db                        # catálogo local do AniList (opcional)
+make db                        # opcional: o catálogo é baixado sozinho quando falta
 make match ARGS=--offline      # casa temporadas; sem --offline usa a API
 make test
 ```

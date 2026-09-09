@@ -86,6 +86,30 @@ def test_catalogo_ancora_na_raiz():
             os.environ["ANIME_DB_JSON"] = anterior
 
 
+def test_garantir_baixa_quando_falta(tmp=None):
+    """O app busca a própria dependência em vez de mandar rodar curl."""
+    import tempfile
+    from anime_tracker import catalog
+
+    destino = os.path.join(tempfile.mkdtemp(), "anime-db.json")
+    chamou = []
+
+    def falso_baixar(caminho, progresso=None):
+        chamou.append(caminho)
+        with open(caminho, "w") as fh:
+            fh.write('{"data": []}')
+        return caminho
+
+    original, catalog.baixar = catalog.baixar, falso_baixar
+    try:
+        assert catalog.garantir(destino) == destino
+        assert chamou == [destino], "deveria baixar quando falta"
+        assert catalog.garantir(destino) == destino
+        assert len(chamou) == 1, "não pode baixar de novo com o arquivo presente"
+    finally:
+        catalog.baixar = original
+
+
 def test_exemplo_do_repo_e_valido():
     """O .env.example precisa ter todas as chaves que o código lê."""
     raiz = os.path.join(os.path.dirname(__file__), "..", "..")

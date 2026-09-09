@@ -160,9 +160,10 @@ def create_app(db_path=None):
         limite = corpo.get("limite")
 
         def executar(progresso):
-            from .catalog import mapa_anilist_para_mal
+            from .catalog import garantir, mapa_anilist_para_mal
             from .mal import MALClient, double_check, resolver_ids
 
+            garantir(progresso=progresso)  # baixa na primeira vez
             mapa = mapa_anilist_para_mal()
             with conn() as c:
                 ids = resolver_ids(c, mapa, progresso=progresso)

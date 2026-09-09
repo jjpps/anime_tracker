@@ -28,6 +28,40 @@ class CatalogoAusente(Exception):
     """Arquivo do catálogo local não encontrado."""
 
 
+def baixar(destino=None, progresso=None):
+    """Baixa o catálogo. O app busca a própria dependência em vez de mandar
+    o usuário rodar curl — o arquivo é detalhe de implementação nosso."""
+    import requests
+
+    caminho = destino or caminho_db()
+    os.makedirs(os.path.dirname(caminho) or ".", exist_ok=True)
+    aviso = progresso or (lambda *a, **k: None)
+    log.info("baixando catálogo de %s", URL_DOWNLOAD)
+
+    parcial = caminho + ".parcial"
+    with requests.get(URL_DOWNLOAD, stream=True, timeout=300) as resp:
+        resp.raise_for_status()
+        total = int(resp.headers.get("Content-Length") or 0)
+        baixado = 0
+        with open(parcial, "wb") as fh:
+            for bloco in resp.iter_content(chunk_size=1 << 20):
+                fh.write(bloco)
+                baixado += len(bloco)
+                aviso("baixando catálogo", baixado // (1 << 20), total // (1 << 20))
+    # só troca no fim: download interrompido não pode virar arquivo meio escrito
+    os.replace(parcial, caminho)
+    log.info("catálogo salvo em %s (%.1f MB)", caminho, baixado / 1e6)
+    return caminho
+
+
+def garantir(destino=None, progresso=None):
+    """Caminho do catálogo, baixando se ainda não existe."""
+    caminho = destino or caminho_db()
+    if not os.path.exists(caminho):
+        baixar(caminho, progresso)
+    return caminho
+
+
 def _id(padrao, sources):
     for s in sources:
         achado = padrao.search(s)

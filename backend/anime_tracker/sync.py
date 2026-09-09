@@ -100,7 +100,7 @@ def escopo(conn, ids_watchlist):
     return list(dict.fromkeys([*ids_watchlist, *do_historico]))
 
 
-def cliente_de_match():
+def cliente_de_match(progresso=None):
     """(cliente, nome da fonte). AniList se estiver no ar; senão o catálogo local.
 
     A troca de fonte é reportada em vez de silenciosa: casar contra outra base
@@ -114,10 +114,13 @@ def cliente_de_match():
         log.info("fonte de match: API do AniList")
         return cliente, "anilist"
     try:
+        from .catalog import garantir
+
+        garantir(progresso=progresso)  # baixa na primeira vez, em vez de falhar
         indice = OfflineIndex()
         log.info("fonte de match: catálogo local (AniList fora do ar)")
         return indice, "catálogo local"
-    except CatalogoAusente as e:
+    except (CatalogoAusente, OSError) as e:
         log.error("sem fonte de match: %s", e)
         return None, None
 
@@ -177,7 +180,7 @@ def rodar_match(conn, matcher=AUTO, todas=False, filtro="", progresso=None):
     fonte = None
     if matcher is AUTO:
         aviso("procurando o AniList", 0, 1)
-        matcher, fonte = cliente_de_match()
+        matcher, fonte = cliente_de_match(aviso)
     if matcher is None:
         return {"matches": 0, "fonte_match": None, "alvos": 0}
 
@@ -252,7 +255,7 @@ def run(cr, conn, force=False, ttl_horas=TTL_HORAS, progresso=None, matcher=AUTO
     fonte = None
     if matcher is AUTO:
         aviso("procurando o AniList", 0, 1)
-        matcher, fonte = cliente_de_match()
+        matcher, fonte = cliente_de_match(aviso)
     resumo["fonte_match"] = fonte
     if matcher is not None:
         resumo["matches"] = casar(conn, matcher, series_para_casar(conn, pendentes), aviso)
