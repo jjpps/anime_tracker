@@ -70,6 +70,24 @@ def _id(padrao, sources):
     return None
 
 
+_memo = {}
+
+
+def carregar(path=None):
+    """Obras do catálogo, lidas uma vez por caminho.
+
+    São 62 MB de JSON e dois consumidores (o índice de busca e o mapa
+    anilist->mal); parsear duas vezes custava alguns segundos à toa."""
+    caminho = caminho_db(path)
+    if caminho not in _memo:
+        if not os.path.exists(caminho):
+            raise CatalogoAusente(f"catálogo local não encontrado em {caminho}")
+        with open(caminho, encoding="utf-8") as fh:
+            _memo[caminho] = json.load(fh)["data"]
+        log.info("catálogo local: %d obras de %s", len(_memo[caminho]), caminho)
+    return _memo[caminho]
+
+
 def mapa_anilist_para_mal(path=None):
     """anilist_id -> (mal_id, título, episódios, tipo, status).
 
@@ -78,16 +96,7 @@ def mapa_anilist_para_mal(path=None):
 
     O catálogo cruza os dois ids, o que evita depender da busca por título do
     MAL — que hoje está fora e, mesmo no ar, rejeita títulos longos."""
-    caminho = caminho_db(path)
-    if not os.path.exists(caminho):
-        raise CatalogoAusente(
-            f"catálogo local não encontrado em {caminho}\n"
-            f"  make db\n"
-            f"  ou: curl -L -o {caminho} {URL_DOWNLOAD}"
-        )
-    with open(caminho, encoding="utf-8") as fh:
-        entries = json.load(fh)["data"]
-
+    entries = carregar(path)
     mapa = {}
     for e in entries:
         anilist_id = _id(ANILIST_URL, e["sources"])
@@ -116,18 +125,8 @@ class OfflineIndex:
 Trocável por anilist.AniList sem o chamador saber a diferença."""
 
     def __init__(self, path=None):
-        caminho = caminho_db(path)
-        if not os.path.exists(caminho):
-            # exceção, não sys.exit: isso também roda em thread do servidor
-            raise CatalogoAusente(
-                f"catálogo local não encontrado em {caminho}\n"
-                f"  make db\n"
-                f"  ou: curl -L -o {caminho} {URL_DOWNLOAD}"
-            )
-        with open(caminho, encoding="utf-8") as fh:
-            entries = json.load(fh)["data"]
-
-        log.info("catálogo local: %d obras de %s", len(entries), caminho)
+        # exceção, não sys.exit: isso também roda em thread do servidor
+        entries = carregar(path)
         self.media = []
         self.por_token = collections.defaultdict(list)
         for e in entries:

@@ -1,12 +1,10 @@
-"""Casa as séries da Crunchyroll com obras do AniList.
+"""Cliente da API do AniList e o matcher temporada -> obra.
 
-O problema central: a CR agrupa tudo sob uma série com N temporadas; o AniList
-trata cada temporada como uma obra separada. Então a unidade de match é a
-TEMPORADA da CR, não a série.
+O problema central: a Crunchyroll agrupa tudo sob uma série com N temporadas;
+o AniList trata cada temporada como uma obra separada. Então a unidade de match
+é a TEMPORADA da CR, não a série.
 
-Uso:
-    python anilist.py                 # casa a watchlist inteira, grava anilist_map.json
-    python anilist.py mushoku         # só as séries que batem com o filtro
+Quem orquestra é sync.py; aqui só há o cliente e as funções puras de match.
 """
 
 import difflib
@@ -14,7 +12,6 @@ import json
 import logging
 import os
 import re
-import sys
 import time
 
 import requests
@@ -284,42 +281,3 @@ def flag_duplicates(seasons):
             s["needs_review"] = True
             s["duplicate_of"] = melhor_por_id[aid]["season_number"]
     return seasons
-
-
-def main():
-    from .crunchyroll import Crunchyroll
-
-    needle = (sys.argv[1] if len(sys.argv) > 1 else "").lower()
-    etp_rt = os.environ.get("CR_ETP_RT")
-    if not etp_rt:
-        sys.exit("defina CR_ETP_RT com o cookie etp_rt do crunchyroll.com")
-
-    cr = Crunchyroll().login(etp_rt)
-    client = AniList()
-    alvos = [
-        s for s in cr.watchlist()
-        if s["availability"] == "available" and needle in s["series_title"].lower()
-    ]
-
-    mapa = []
-    for i, series in enumerate(alvos, 1):
-        print(f"\r{i}/{len(alvos)} {series['series_title'][:40]:<42}", end="", file=sys.stderr)
-        seasons = cr.seasons(series["series_id"])
-        mapa.append({
-            "cr_series_id": series["series_id"],
-            "cr_series_title": series["series_title"],
-            "seasons": match_seasons(client, series["series_title"], seasons),
-        })
-    print("\r" + " " * 60 + "\r", end="", file=sys.stderr)
-
-    with open("anilist_map.json", "w") as fh:
-        json.dump(mapa, fh, ensure_ascii=False, indent=2)
-
-    total = sum(len(m["seasons"]) for m in mapa)
-    casados = sum(1 for m in mapa for s in m["seasons"] if s["anilist_id"])
-    revisar = sum(1 for m in mapa for s in m["seasons"] if s["anilist_id"] and s["needs_review"])
-    print(f"anilist_map.json: {casados}/{total} temporadas casadas ({revisar} para revisar)")
-
-
-if __name__ == "__main__":
-    main()

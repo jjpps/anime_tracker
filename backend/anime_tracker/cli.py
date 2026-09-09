@@ -17,7 +17,7 @@ import sys
 
 from . import db, sync
 from .config import load_env
-from .anilist import AniList, AniListError, match_seasons
+from .anilist import AniListError
 from .crunchyroll import Crunchyroll, CrunchyrollError
 from .progress import series_status, watched_by_season
 
@@ -29,17 +29,23 @@ def _cr():
     return Crunchyroll().login(etp_rt)
 
 
-def _progresso(i, total, texto=""):
-    print(f"\r{i}/{total} {texto[:40]:<42}", end="", file=sys.stderr)
+def avisar(texto, feito, total):
+    """Callback de progresso das tarefas longas, na mesma linha do terminal."""
+    print(f"\r{feito}/{total} {texto[:40]:<42}", end="", file=sys.stderr)
+
+
+def limpar_linha():
+    """Apaga a linha de progresso antes de imprimir o resultado."""
+    print("\r" + " " * 60 + "\r", end="", file=sys.stderr)
 
 
 def cmd_sync(args, conn):
     try:
         r = sync.run(_cr(), conn, force=args.force, ttl_horas=args.ttl,
-                     progresso=lambda texto, i, total: _progresso(i, total, texto))
+                     progresso=avisar)
     except sync.SyncBloqueado as e:
         sys.exit(f"{e}. Use --force para ignorar o intervalo.")
-    print("\r" + " " * 60 + "\r", end="", file=sys.stderr)
+    limpar_linha()
     modo = "incremental" if r["incremental"] else "completo"
     print(f"sync {modo}: {r['episodios']} episódios novos, {r['series']} séries, "
           f"{r['series_atualizadas']} com temporadas rebuscadas ({r['temporadas']} temporadas)")
@@ -54,12 +60,12 @@ def cmd_match(args, conn):
     if args.offline:
         from .catalog import OfflineIndex, garantir
 
-        garantir(progresso=lambda t, i, n: _progresso(i, n, t))
+        garantir(progresso=avisar)
         matcher = OfflineIndex()
 
     r = sync.rodar_match(conn, matcher=matcher, todas=args.todas, filtro=args.filtro,
-                         progresso=lambda texto, i, total: _progresso(i, total, texto))
-    print("\r" + " " * 60 + "\r", end="", file=sys.stderr)
+                         progresso=avisar)
+    limpar_linha()
     if r["fonte_match"] is None and matcher is sync.AUTO:
         sys.exit("AniList fora do ar e o download do catálogo local falhou")
     print(f"{r['matches']} temporadas casadas em {r['alvos']} séries"
@@ -72,10 +78,9 @@ def cmd_mal(args, conn):
     from .catalog import garantir, mapa_anilist_para_mal
     from .mal import MALClient, double_check, resolver_ids
 
-    avisar = lambda texto, i, total: _progresso(i, total, texto)  # noqa: E731
     garantir(progresso=avisar)  # baixa o catálogo na primeira vez
     r = resolver_ids(conn, mapa_anilist_para_mal(), progresso=avisar)
-    print("\r" + " " * 60 + "\r", end="", file=sys.stderr)
+    limpar_linha()
     print(f"mal_id: {r['resolvidos']} resolvidos, {r['sem_mapa']} sem correspondência no catálogo")
 
     if args.so_ids:
@@ -84,7 +89,7 @@ def cmd_mal(args, conn):
     cliente = MALClient(os.environ.get("MAL_CLIENT_ID"))
     rel = double_check(conn, cliente, limite=args.limite, revalidar=args.revalidar,
                        progresso=avisar)
-    print("\r" + " " * 60 + "\r", end="", file=sys.stderr)
+    limpar_linha()
     print(f"double check ({rel['fonte']}): {rel['checados']} conferidos, "
           f"{len(rel['divergentes'])} divergentes, {len(rel['erros'])} com erro")
     for d in rel["divergentes"][: args.mostrar]:
