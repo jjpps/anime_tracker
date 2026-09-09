@@ -97,6 +97,14 @@ def cmd_mal(args, conn):
     if len(rel["divergentes"]) > args.mostrar:
         print(f"  ... e mais {len(rel['divergentes']) - args.mostrar}")
 
+    # erro contado e não mostrado esconde exatamente o que precisa ser visto
+    for e in rel["erros"][: args.mostrar]:
+        print(f"  ERRO {e['season_id']}: {e['erro']}")
+    if rel["erros"] and not cliente.oficial:
+        print("\nO Jikan é um proxy do MyAnimeList e anda falhando em alcançá-lo.\n"
+              "Preencha MAL_CLIENT_ID no .env para usar a API oficial "
+              "(myanimelist.net/apiconfig).")
+
 
 def cmd_export(args, conn):
     from .export_mal import exportar
