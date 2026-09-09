@@ -365,6 +365,33 @@ def test_status_de():
     assert export_mal.status_de(5, 0) == "Watching"  # sem total, não afirma completo
 
 
+def test_obra_no_ar_nao_vira_completo():
+    """One Piece: assistiu tudo que existe, mas a série continua. Está em dia."""
+    assert export_mal.status_de(1168, 1168, em_exibicao=True) == "Watching"
+    assert export_mal.status_de(1168, 1168, em_exibicao=False) == "Completed"
+
+
+def test_cr_juntando_cours_ainda_conta_como_completo():
+    """27 das 28 temporadas que passam do total são obras encerradas."""
+    assert export_mal.status_de(11, 11, em_exibicao=False) == "Completed"
+
+
+def test_xml_marca_serie_no_ar_como_watching():
+    conn = banco()
+    conn.execute("UPDATE matches SET mal_id = 21, mal_episodes = 1168, "
+                 "mal_title = 'One Piece', mal_status = 'ONGOING'")
+    conn.commit()
+    db.save_history(conn, [
+        {"episode_id": "a", "series_id": "G1", "series_title": "One Piece",
+         "season_number": 1, "episode_number": 1173.0, "episode_title": "",
+         "watched_at": "2026-01-01T00:00:00Z", "fully_watched": True}])
+    caminho = tempfile.mktemp(suffix=".xml")
+    export_mal.exportar(conn, caminho)
+    no = ET.parse(caminho).getroot().find("anime")
+    assert no.findtext("my_watched_episodes") == "1168"
+    assert no.findtext("my_status") == "Watching", "marcaria uma série no ar como concluída"
+
+
 if __name__ == "__main__":
     for nome, fn in sorted(globals().items()):
         if nome.startswith("test_"):

@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS matches (
     mal_id           INTEGER,
     mal_title        TEXT,
     mal_episodes     INTEGER,
+    mal_status       TEXT,
     mal_checked_at   TEXT,
     confidence       REAL NOT NULL DEFAULT 0,
     duplicate_of     INTEGER,
@@ -133,6 +134,7 @@ COLUNAS_NOVAS = [
     ("matches", "mal_id", "INTEGER"),
     ("matches", "mal_title", "TEXT"),
     ("matches", "mal_episodes", "INTEGER"),
+    ("matches", "mal_status", "TEXT"),
     ("matches", "mal_checked_at", "TEXT"),
 ]
 
@@ -262,6 +264,8 @@ def save_matches(conn, resultados):
                             THEN matches.mal_title ELSE NULL END,
              mal_episodes=CASE WHEN excluded.anilist_id IS matches.anilist_id
                                THEN matches.mal_episodes ELSE NULL END,
+             mal_status=CASE WHEN excluded.anilist_id IS matches.anilist_id
+                             THEN matches.mal_status ELSE NULL END,
              mal_checked_at=CASE WHEN excluded.anilist_id IS matches.anilist_id
                                  THEN matches.mal_checked_at ELSE NULL END
            WHERE matches.review_status = 'pending'""",
@@ -272,9 +276,9 @@ def save_matches(conn, resultados):
 
 
 def set_mal_ids(conn, pares):
-    """Grava o mal_id derivado do anilist_id. `pares`: [(season_id, mal_id)]."""
-    conn.executemany("UPDATE matches SET mal_id = ? WHERE season_id = ?",
-                     [(mal_id, season_id) for season_id, mal_id in pares])
+    """Grava mal_id e status da obra. `pares`: [(season_id, mal_id, status)]."""
+    conn.executemany("UPDATE matches SET mal_id = ?, mal_status = ? WHERE season_id = ?",
+                     [(mal_id, status, season_id) for season_id, mal_id, status in pares])
     conn.commit()
     return len(pares)
 
@@ -292,7 +296,7 @@ def set_mal_check(conn, season_id, titulo, episodios):
 def matches_para_exportar(conn):
     """Tudo que tem mal_id e não foi rejeitado, com o contexto da temporada."""
     return conn.execute(
-        """SELECT m.season_id, m.mal_id, m.mal_title, m.mal_episodes,
+        """SELECT m.season_id, m.mal_id, m.mal_title, m.mal_episodes, m.mal_status,
                   m.anilist_id, m.anilist_title, m.anilist_episodes,
                   m.review_status, m.confidence,
                   s.series_id, s.season_number, s.total_episodes AS cr_episodes,

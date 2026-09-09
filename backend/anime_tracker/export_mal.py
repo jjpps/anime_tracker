@@ -26,11 +26,20 @@ STATUS_COMPLETO = "Completed"
 STATUS_PLANEJADO = "Plan to Watch"
 
 
-def status_de(assistidos, total):
+def status_de(assistidos, total, em_exibicao=False):
+    """Estado a declarar no import.
+
+    `em_exibicao` vem do catálogo (ONGOING), não de heurística. Tentei inferir
+    "no ar" pelo progresso passar do total e estava errado: nos dados reais,
+    28 temporadas passam do total e 27 delas são obras JÁ ENCERRADAS — é a
+    Crunchyroll juntando dois cours numa temporada só. Só uma era série no ar.
+
+    Ter assistido tudo que existe de uma obra no ar é estar em dia, não ter
+    terminado."""
     if not assistidos:
         return STATUS_PLANEJADO
     if total and assistidos >= total:
-        return STATUS_COMPLETO
+        return STATUS_ASSISTINDO if em_exibicao else STATUS_COMPLETO
     return STATUS_ASSISTINDO
 
 
@@ -48,6 +57,7 @@ def agrupar_por_obra(linhas, assistidos_por_temporada):
         # o total da obra no MAL tem prioridade sobre a contagem da CR
         total = linha["mal_episodes"] or linha["anilist_episodes"] or 0
         progresso = progresso_da_temporada(assistidos, total)
+        em_exibicao = (linha["mal_status"] or "").upper() == "ONGOING"
 
         atual = por_obra.get(chave)
         if atual is None or progresso > atual["progresso"]:
@@ -56,10 +66,12 @@ def agrupar_por_obra(linhas, assistidos_por_temporada):
                 "titulo": linha["mal_title"] or linha["anilist_title"] or linha["series_title"],
                 "total": total,
                 "progresso": progresso,
+                "em_exibicao": em_exibicao or (atual["em_exibicao"] if atual else False),
                 "temporadas": 1 if atual is None else atual["temporadas"] + 1,
             }
         elif atual is not None:
             atual["temporadas"] += 1
+            atual["em_exibicao"] = atual["em_exibicao"] or em_exibicao
     return list(por_obra.values())
 
 
@@ -75,7 +87,8 @@ def montar_xml(entradas):
         ET.SubElement(no, "series_title").text = e["titulo"]
         ET.SubElement(no, "series_episodes").text = str(e["total"] or 0)
         ET.SubElement(no, "my_watched_episodes").text = str(e["progresso"])
-        ET.SubElement(no, "my_status").text = status_de(e["progresso"], e["total"])
+        ET.SubElement(no, "my_status").text = status_de(
+            e["progresso"], e["total"], e.get("em_exibicao", False))
         ET.SubElement(no, "my_score").text = "0"
         # sem isso o MAL ignora a linha quando o anime já está na lista
         ET.SubElement(no, "update_on_import").text = "1"
@@ -83,6 +96,10 @@ def montar_xml(entradas):
     arvore = ET.ElementTree(raiz)
     ET.indent(arvore, space="  ")
     return arvore
+
+
+def _status(e):
+    return status_de(e["progresso"], e["total"], e.get("em_exibicao", False))
 
 
 def exportar(conn, caminho, apenas_confirmados=False):
@@ -106,9 +123,9 @@ def exportar(conn, caminho, apenas_confirmados=False):
         "arquivo": str(caminho),
         "obras": len(entradas),
         "temporadas": len(linhas),
-        "completas": sum(1 for e in entradas if status_de(e["progresso"], e["total"]) == STATUS_COMPLETO),
-        "assistindo": sum(1 for e in entradas if status_de(e["progresso"], e["total"]) == STATUS_ASSISTINDO),
-        "planejadas": sum(1 for e in entradas if status_de(e["progresso"], e["total"]) == STATUS_PLANEJADO),
+        "completas": sum(1 for e in entradas if _status(e) == STATUS_COMPLETO),
+        "assistindo": sum(1 for e in entradas if _status(e) == STATUS_ASSISTINDO),
+        "planejadas": sum(1 for e in entradas if _status(e) == STATUS_PLANEJADO),
     }
     log.info("XML gerado: %(obras)d obras de %(temporadas)d temporadas em %(arquivo)s", resumo)
     return resumo

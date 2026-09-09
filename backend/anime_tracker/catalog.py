@@ -37,7 +37,10 @@ def _id(padrao, sources):
 
 
 def mapa_anilist_para_mal(path=None):
-    """anilist_id -> (mal_id, título, episódios, tipo).
+    """anilist_id -> (mal_id, título, episódios, tipo, status).
+
+    `status` é ONGOING/FINISHED e decide se "assisti tudo que existe" quer
+    dizer "terminei" ou "estou em dia".
 
     O catálogo cruza os dois ids, o que evita depender da busca por título do
     MAL — que hoje está fora e, mesmo no ar, rejeita títulos longos."""
@@ -56,7 +59,8 @@ def mapa_anilist_para_mal(path=None):
         anilist_id = _id(ANILIST_URL, e["sources"])
         mal_id = _id(MAL_URL, e["sources"])
         if anilist_id and mal_id:
-            mapa[anilist_id] = (mal_id, e.get("title"), e.get("episodes"), e.get("type"))
+            mapa[anilist_id] = (mal_id, e.get("title"), e.get("episodes"),
+                                e.get("type"), e.get("status"))
     log.info("mapa anilist->mal: %d obras cruzadas de %d", len(mapa), len(entries))
     return mapa
 

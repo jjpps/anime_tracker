@@ -105,7 +105,8 @@ def resolver_ids(conn, mapa, progresso=None):
         aviso("resolvendo ids do MAL", i, len(faltando))
         achado = mapa.get(r["anilist_id"])
         if achado:
-            pares.append((r["season_id"], achado[0]))
+            status = achado[4] if len(achado) > 4 else None
+            pares.append((r["season_id"], achado[0], status))
         else:
             sem_mapa += 1
     db.set_mal_ids(conn, pares)
