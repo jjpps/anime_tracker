@@ -30,10 +30,13 @@ def novo_banco():
     return conn
 
 
-def match(season_number, anilist_id, title, conf, season_id=None):
+def match(season_number, provider_id, title, conf, season_id=None, provider="anilist"):
+    """Resultado do matcher: neutro de provedor, como sai de match_seasons."""
     return {"season_id": season_id or IDS.get(season_number),
-            "season_number": season_number, "anilist_id": anilist_id, "anilist_title": title,
-            "anilist_episodes": 11, "anilist_url": "", "confidence": conf}
+            "season_number": season_number, "provider": provider,
+            "provider_id": provider_id, "provider_title": title,
+            "provider_episodes": 11, "provider_url": "", "provider_status": "FINISHED",
+            "confidence": conf}
 
 
 IDS = {1: "S1", 3: "S3"}

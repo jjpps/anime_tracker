@@ -33,12 +33,14 @@ def app_com_dados():
          "total_episodes": 11, "years": (2026, 2026)},
     ])
     db.save_matches(conn, [
-        {"season_id": "S1", "season_number": 1, "anilist_id": 108465,
-         "anilist_title": "Mushoku Tensei", "anilist_episodes": 11,
-         "anilist_url": "", "confidence": 1.0},
-        {"season_id": "S3", "season_number": 3, "anilist_id": 166873,
-         "anilist_title": "Mushoku Tensei III", "anilist_episodes": 14,
-         "anilist_url": "", "confidence": 0.8},
+        {"season_id": "S1", "season_number": 1,
+         "provider": "anilist", "provider_id": 108465,
+         "provider_title": "Mushoku Tensei", "provider_episodes": 11,
+         "provider_url": "", "confidence": 1.0},
+        {"season_id": "S3", "season_number": 3,
+         "provider": "anilist", "provider_id": 166873,
+         "provider_title": "Mushoku Tensei III", "provider_episodes": 14,
+         "provider_url": "", "confidence": 0.8},
     ])
     conn.close()
     app = create_app(caminho)
@@ -223,17 +225,16 @@ def _esperar(cli, tentativas=100):
     raise AssertionError("tarefa não terminou")
 
 
-def test_botao_mal_roda_a_tarefa():
-    """Botão Sincronizar MyAnimeList: resolve ids e confere, em background."""
+def test_double_check_do_mal_roda_em_background():
+    """Nome próprio: 'mal' agora é o sync do provedor, não o double check."""
     cli, _ = app_com_dados()
-    r = cli.post("/api/mal", json={})
-    assert r.status_code == 202
+    assert cli.post("/api/mal", json={}).status_code == 202
 
     s = _esperar(cli)
-    assert s["tipo"] == "mal"
-    # sem catálogo local a tarefa falha com instrução, sem derrubar o servidor
+    assert s["tipo"] == "mal-check"
+    # sem catálogo a tarefa falha com mensagem, sem derrubar o servidor
     if s["erro"]:
-        assert "catálogo local" in s["erro"] or "CatalogoAusente" in s["erro"]
+        assert s["erro"].strip(), "erro tem que ter mensagem"
     else:
         assert "resolvidos" in s["resultado"] and "fonte" in s["resultado"]
 
@@ -256,17 +257,86 @@ def test_stats_traz_contadores_do_mal():
     assert s["com_mal_id"] == 0 and s["mal_conferidos"] == 0
 
 
-def test_botao_mal_aparece_no_frontend():
-    cli, _ = app_com_dados()
-    html = cli.get("/").data.decode()
-    assert 'id="mal"' in html
-    assert '/api/mal' in html
-
-
 def test_frontend_servido():
+    """Com build presente serve o bundle; sem build, instrui em vez de 404."""
     cli, _ = app_com_dados()
     r = cli.get("/")
-    assert r.status_code == 200 and b"Cat\xc3\xa1logo sincronizado" in r.data
+    if r.status_code == 503:
+        assert b"npm run build" in r.data
+    else:
+        assert r.status_code == 200 and b"<app-root" in r.data
+
+
+def test_rota_desconhecida_cai_no_angular():
+    """O roteador é do Angular: caminho sem arquivo devolve o index, não 404."""
+    cli, _ = app_com_dados()
+    assert cli.get("/biblioteca").status_code in (200, 503)
+
+
+def test_biblioteca_traz_o_rotulo_do_provedor():
+    cli, caminho = app_com_dados()
+    itens = cli.get("/api/library").get_json()
+    assert len(itens) == 2
+    assert all(i["providers"] == "anilist" for i in itens)
+
+    conn = db.connect(caminho)
+    conn.execute("UPDATE matches SET mal_id = 39535 WHERE season_id = 'S1'")
+    conn.commit()
+    conn.close()
+    por_id = {i["season_id"]: i for i in cli.get("/api/library").get_json()}
+    assert por_id["S1"]["providers"] == "anilist,mal"
+    assert por_id["S3"]["providers"] == "anilist"
+
+
+def test_biblioteca_ignora_quem_nao_tem_vinculo():
+    cli, caminho = app_com_dados()
+    conn = db.connect(caminho)
+    conn.execute("UPDATE matches SET anilist_id = NULL WHERE season_id = 'S1'")
+    conn.commit()
+    conn.close()
+    assert [i["season_id"] for i in cli.get("/api/library").get_json()] == ["S3"]
+
+
+def test_correcoes_so_o_que_precisa_de_olho():
+    """S1 casou com confiança 1.0; S3 com 0.8 — só o segundo entra."""
+    cli, _ = app_com_dados()
+    itens = cli.get("/api/corrections").get_json()
+    assert [i["season_id"] for i in itens] == ["S3"]
+
+
+def test_correcoes_por_provedor():
+    """Sem mal_id, toda temporada precisa de correção no MyAnimeList."""
+    cli, _ = app_com_dados()
+    assert len(cli.get("/api/corrections?provider=mal").get_json()) == 2
+    assert len(cli.get("/api/corrections?provider=anilist").get_json()) == 1
+
+
+def test_sync_por_provedor_recusa_provedor_desconhecido():
+    cli, _ = app_com_dados()
+    r = cli.post("/api/provider/kitsu", json={})
+    assert r.status_code == 400 and "provider" in r.get_json()["erro"]
+
+
+def test_sync_por_provedor_roda_e_conta_correcoes():
+    cli, _ = app_com_dados()
+    r = cli.post("/api/provider/mal", json={})
+    assert r.status_code == 202
+    s = _esperar(cli)
+    assert s["tipo"] == "mal"
+    if not s["erro"]:
+        assert "correcoes" in s["resultado"] and s["resultado"]["provider"] == "mal"
+
+
+def test_baixar_crunchyroll_nao_casa():
+    """Botão separado: baixar a CR não dispara match de provedor nenhum."""
+    cli, _ = app_com_dados()
+    anterior = os.environ.pop("CR_ETP_RT", None)
+    try:
+        r = cli.post("/api/crunchyroll", json={"force": True})
+        assert r.status_code == 500 and "CR_ETP_RT" in r.get_json()["erro"]
+    finally:
+        if anterior is not None:
+            os.environ["CR_ETP_RT"] = anterior
 
 
 if __name__ == "__main__":

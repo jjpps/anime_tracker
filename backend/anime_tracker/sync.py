@@ -100,46 +100,54 @@ def escopo(conn, ids_watchlist):
     return list(dict.fromkeys([*ids_watchlist, *do_historico]))
 
 
-def cliente_de_match(progresso=None):
-    """(cliente, nome da fonte). AniList se estiver no ar; senão o catálogo local.
+def cliente_de_match(provider="anilist", progresso=None):
+    """(cliente, nome da fonte) para o provedor escolhido.
 
-    A troca de fonte é reportada em vez de silenciosa: casar contra outra base
-    sem dizer seria esconder de onde veio o dado."""
+    Para o AniList tenta a API primeiro. Para o MyAnimeList vai direto ao
+    catálogo: a busca por título deles rejeita `q` longo e os títulos da
+    Crunchyroll passam de 64 caracteres com frequência.
+
+    A fonte usada é reportada em vez de silenciosa: casar contra outra base sem
+    dizer seria esconder de onde veio o dado."""
     from .anilist import AniList
-    from .catalog import CatalogoAusente, OfflineIndex
+    from .catalog import CatalogoAusente, OfflineIndex, garantir
 
-    log.info("escolhendo fonte de match: sondando o AniList")
-    cliente = AniList()
-    if cliente.disponivel():
-        log.info("fonte de match: API do AniList")
-        return cliente, "anilist"
+    if provider == "anilist":
+        log.info("sondando a API do AniList")
+        cliente = AniList()
+        if cliente.disponivel():
+            return cliente, "api do anilist"
+
     try:
-        from .catalog import garantir
-
         garantir(progresso=progresso)  # baixa na primeira vez, em vez de falhar
-        indice = OfflineIndex()
-        log.info("fonte de match: catálogo local (AniList fora do ar)")
+        indice = OfflineIndex(provider=provider)
+        log.info("fonte de match: catálogo local (%s)", provider)
         return indice, "catálogo local"
     except (CatalogoAusente, OSError) as e:
         log.error("sem fonte de match: %s", e)
         return None, None
 
 
-def series_para_casar(conn, atualizadas):
-    """Séries com temporada sem match, mais as que acabaram de mudar."""
+def series_para_casar(conn, atualizadas, provider="anilist"):
+    """Séries sem vínculo com ESTE provedor, mais as que acabaram de mudar.
+
+    Ter anilist_id não dispensa procurar o mal_id: são vínculos independentes,
+    e o usuário escolhe com qual provedor sincronizar."""
+    if provider not in db.PROVIDERS:
+        raise ValueError(f"provider inválido: {provider}")
     sem_match = conn.execute(
-        """SELECT DISTINCT s.series_id, se.title
-             FROM seasons s
-             JOIN series se USING (series_id)
-             LEFT JOIN matches m USING (season_id)
-            WHERE m.season_id IS NULL"""
+        f"""SELECT DISTINCT s.series_id, se.title
+              FROM seasons s
+              JOIN series se USING (series_id)
+              LEFT JOIN matches m USING (season_id)
+             WHERE m.season_id IS NULL OR m.{provider}_id IS NULL"""
     ).fetchall()
     alvos = {r["series_id"]: r["title"] for r in sem_match}
     alvos.update({s["series_id"]: s["series_title"] for s in atualizadas})
     return list(alvos.items())
 
 
-def casar(conn, cliente, alvos, aviso):
+def casar(conn, cliente, alvos, aviso, provider="anilist"):
     """Casa as temporadas das séries indicadas. Revisado não é tocado (ver db)."""
     total = 0
     for i, (series_id, titulo) in enumerate(alvos, 1):
@@ -155,7 +163,8 @@ def casar(conn, cliente, alvos, aviso):
             for r in db.seasons_of(conn, series_id)
         ]
         if entrada:
-            total += db.save_matches(conn, match_seasons(cliente, titulo, entrada))
+            total += db.save_matches(
+                conn, match_seasons(cliente, titulo, entrada, provider), provider)
     return total
 
 
@@ -171,7 +180,8 @@ def series_com_temporadas(conn):
     ]
 
 
-def rodar_match(conn, matcher=AUTO, todas=False, filtro="", progresso=None):
+def rodar_match(conn, matcher=AUTO, todas=False, filtro="", provider="anilist",
+                progresso=None):
     """Match isolado, sem tocar na Crunchyroll.
 
     `todas=True` recasa tudo que não foi revisado — serve para refazer com a
@@ -179,16 +189,17 @@ def rodar_match(conn, matcher=AUTO, todas=False, filtro="", progresso=None):
     aviso = progresso or (lambda *a, **k: None)
     fonte = None
     if matcher is AUTO:
-        aviso("procurando o AniList", 0, 1)
-        matcher, fonte = cliente_de_match(aviso)
+        aviso(f"procurando fonte para {provider}", 0, 1)
+        matcher, fonte = cliente_de_match(provider, aviso)
     if matcher is None:
-        return {"matches": 0, "fonte_match": None, "alvos": 0}
+        return {"matches": 0, "fonte_match": None, "alvos": 0, "provider": provider}
 
-    alvos = series_com_temporadas(conn) if todas else series_para_casar(conn, [])
+    alvos = (series_com_temporadas(conn) if todas
+             else series_para_casar(conn, [], provider))
     if filtro:
         alvos = [(i, t) for i, t in alvos if filtro.lower() in (t or "").lower()]
-    return {"matches": casar(conn, matcher, alvos, aviso),
-            "fonte_match": fonte, "alvos": len(alvos)}
+    return {"matches": casar(conn, matcher, alvos, aviso, provider),
+            "fonte_match": fonte, "alvos": len(alvos), "provider": provider}
 
 
 def run(cr, conn, force=False, ttl_horas=TTL_HORAS, progresso=None, matcher=AUTO):
@@ -254,8 +265,8 @@ def run(cr, conn, force=False, ttl_horas=TTL_HORAS, progresso=None, matcher=AUTO
     # 4. casar o que ficou sem correspondência, para gerar a fila de revisão
     fonte = None
     if matcher is AUTO:
-        aviso("procurando o AniList", 0, 1)
-        matcher, fonte = cliente_de_match(aviso)
+        aviso("procurando fonte de match", 0, 1)
+        matcher, fonte = cliente_de_match(progresso=aviso)
     resumo["fonte_match"] = fonte
     if matcher is not None:
         resumo["matches"] = casar(conn, matcher, series_para_casar(conn, pendentes), aviso)

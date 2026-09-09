@@ -1,0 +1,187 @@
+<nav class="navbar navbar-dark bg-dark border-bottom border-secondary">
+  <div class="container-fluid">
+    <span class="navbar-brand mb-0 h1">anime tracker</span>
+    @if (stats(); as s) {
+      <span class="text-secondary small">
+        {{ s.series }} séries · {{ s.seasons }} temporadas · {{ s.episodes }} episódios
+      </span>
+    }
+    @if (tela() !== 'inicio') {
+      <button class="btn btn-outline-light btn-sm" (click)="voltar()">Voltar</button>
+    }
+  </div>
+</nav>
+
+<main class="container-fluid py-4">
+  @if (erro(); as e) {
+    <div class="alert alert-danger d-flex justify-content-between align-items-center">
+      <span>{{ e }}</span>
+      <button class="btn-close" (click)="erro.set(null)"></button>
+    </div>
+  }
+
+  @if (rodando()) {
+    <div class="alert alert-info">
+      <div class="d-flex align-items-center gap-3">
+        <div class="spinner-border spinner-border-sm"></div>
+        <span>{{ etapa() || 'iniciando' }}</span>
+        @if (progresso().total) {
+          <span class="text-body-secondary">{{ progresso().feito }}/{{ progresso().total }}</span>
+        }
+      </div>
+      @if (progresso().total) {
+        <div class="progress mt-2" style="height: 4px">
+          <div class="progress-bar" role="progressbar"
+               [style.width.%]="(progresso().feito / progresso().total) * 100"></div>
+        </div>
+      }
+    </div>
+  }
+
+  <!-- ===== início ===== -->
+  @if (tela() === 'inicio') {
+    <div class="row g-3">
+      <div class="col-12 col-md-6 col-xl-3">
+        <button class="btn btn-primary w-100 py-3" (click)="abrirBiblioteca()">
+          Exibir biblioteca
+          @if (stats(); as s) {
+            <span class="badge text-bg-light ms-2">{{ s.matched }}</span>
+          }
+        </button>
+      </div>
+
+      <div class="col-12 col-md-6 col-xl-3">
+        <button class="btn btn-outline-light w-100 py-3" (click)="baixarCrunchyroll()"
+                [disabled]="rodando()">
+          Baixar Crunchyroll
+        </button>
+      </div>
+
+      <!-- escolher um provedor esconde o outro até o sync terminar -->
+      @if (mostraProvedor('mal')) {
+        <div class="col-12 col-md-6 col-xl-3">
+          <button class="btn btn-outline-info w-100 py-3" (click)="sincronizar('mal')"
+                  [disabled]="rodando()">
+            Sincronizar MAL
+          </button>
+        </div>
+      }
+      @if (mostraProvedor('anilist')) {
+        <div class="col-12 col-md-6 col-xl-3">
+          <button class="btn btn-outline-info w-100 py-3" (click)="sincronizar('anilist')"
+                  [disabled]="rodando()">
+            Sincronizar AniList
+          </button>
+        </div>
+      }
+    </div>
+
+    @if (provedorAtivo() && !rodando()) {
+      <button class="btn btn-link btn-sm mt-3 p-0" (click)="provedorAtivo.set(null)">
+        trocar de provedor
+      </button>
+    }
+
+    @if (ultimoResultado(); as r) {
+      <div class="alert alert-secondary mt-4">
+        @if (r['episodios'] !== undefined) {
+          {{ r['episodios'] }} episódios novos · {{ r['series'] }} séries ·
+          {{ r['temporadas'] }} temporadas atualizadas
+        } @else {
+          {{ r['matches'] }} temporadas casadas em {{ r['alvos'] }} séries
+          @if (r['fonte_match']) { · fonte: {{ r['fonte_match'] }} }
+          @if (!r['fonte_match']) { · <strong>nenhuma fonte disponível</strong> }
+        }
+      </div>
+    }
+  }
+
+  <!-- ===== biblioteca ===== -->
+  @if (tela() === 'biblioteca') {
+    <h2 class="h5 mb-3">Biblioteca <small class="text-secondary">({{ biblioteca().length }})</small></h2>
+    <input class="form-control mb-3" style="max-width: 380px" placeholder="filtrar por série..."
+           [ngModel]="busca()" (ngModelChange)="busca.set($event); abrirBiblioteca()">
+
+    @if (carregando()) {
+      <p class="text-secondary">carregando...</p>
+    } @else if (!biblioteca().length) {
+      <p class="text-secondary">
+        nenhum anime vinculado ainda — baixe a Crunchyroll e sincronize com um provedor
+      </p>
+    } @else {
+      <div class="table-responsive">
+        <table class="table table-dark table-hover align-middle">
+          <thead>
+            <tr><th>Série</th><th>Temporada</th><th>Vinculado a</th><th>Título no provedor</th></tr>
+          </thead>
+          <tbody>
+            @for (item of biblioteca(); track item.season_id) {
+              <tr>
+                <td>{{ item.series_title }}</td>
+                <td class="text-nowrap">T{{ item.season_number }} · {{ item.cr_episodes }} eps</td>
+                <td class="text-nowrap">
+                  @if (temVinculo(item, 'anilist')) {
+                    <a class="badge text-bg-primary text-decoration-none me-1"
+                       [href]="item.anilist_url || 'https://anilist.co/anime/' + item.anilist_id"
+                       target="_blank" rel="noopener">AniList {{ item.anilist_id }}</a>
+                  }
+                  @if (temVinculo(item, 'mal')) {
+                    <a class="badge text-bg-info text-decoration-none"
+                       [href]="'https://myanimelist.net/anime/' + item.mal_id"
+                       target="_blank" rel="noopener">MyAnimeList {{ item.mal_id }}</a>
+                  }
+                </td>
+                <td class="text-secondary">{{ item.anilist_title || item.mal_title }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+
+  <!-- ===== correções ===== -->
+  @if (tela() === 'correcoes') {
+    <h2 class="h5">Precisam de correção <small class="text-secondary">({{ correcoes().length }})</small></h2>
+    <p class="text-secondary small">
+      O sync resolveu o resto sozinho. Aqui ficou o que não teve correspondência,
+      o que ficou com confiança baixa e o que apontou para uma obra já usada.
+    </p>
+
+    @if (carregando()) {
+      <p class="text-secondary">carregando...</p>
+    } @else if (!correcoes().length) {
+      <div class="alert alert-success">Nada a corrigir: todas as temporadas casaram com confiança.</div>
+    } @else {
+      @for (item of correcoes(); track item.season_id) {
+        <div class="card bg-dark border-secondary mb-2">
+          <div class="card-body d-flex flex-wrap gap-3 align-items-center">
+            <div class="flex-grow-1" style="min-width: 260px">
+              <div class="fw-semibold">
+                {{ item.series_title }} — T{{ item.season_number }}
+                <span class="text-secondary fw-normal">({{ item.cr_episodes }} eps)</span>
+              </div>
+              <div class="small">
+                @if (item.anilist_id || item.mal_id) {
+                  <span class="text-secondary">→ {{ item.anilist_title || item.mal_title }}</span>
+                  <span class="badge text-bg-secondary ms-2">confiança {{ item.confidence }}</span>
+                } @else {
+                  <span class="text-danger">sem correspondência no provedor</span>
+                }
+                @if (item.duplicate_of !== null) {
+                  <span class="badge text-bg-warning ms-2">mesma obra da T{{ item.duplicate_of }}</span>
+                }
+              </div>
+            </div>
+            <input #idCorrigido class="form-control form-control-sm" style="width: 120px"
+                   placeholder="id correto">
+            <button class="btn btn-success btn-sm"
+                    (click)="decidir(item, 'confirmed', idCorrigido.value)">Confirmar</button>
+            <button class="btn btn-outline-danger btn-sm"
+                    (click)="decidir(item, 'rejected', '')">Rejeitar</button>
+          </div>
+        </div>
+      }
+    }
+  }
+</main>

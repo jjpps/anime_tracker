@@ -16,7 +16,19 @@ from . import db, oauth, sync
 from .crunchyroll import Crunchyroll, CrunchyrollError
 from .config import load_env
 
-FRONTEND = os.path.join(os.path.dirname(__file__), "..", "..", "frontend")
+# build do Angular; `npm run build` em frontend/web escreve aqui
+FRONTEND = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "web", "dist", "web", "browser")
+)
+SEM_BUILD = """<!doctype html><meta charset="utf-8">
+<title>anime tracker</title>
+<body style="font:15px system-ui;background:#14161a;color:#e6e8ec;padding:40px">
+<h1>Frontend não compilado</h1>
+<p>O Angular precisa ser buildado uma vez:</p>
+<pre style="background:#1c1f26;padding:12px;border-radius:6px">cd frontend/web
+npm install
+npm run build</pre>
+<p>Esperado em <code>{}</code>.</p>"""
 
 
 def create_app(db_path=None):
@@ -66,11 +78,17 @@ def create_app(db_path=None):
 
     @app.get("/")
     def index():
+        # instrução em vez de 404: quem clona não adivinha que falta um build
+        if not os.path.exists(os.path.join(FRONTEND, "index.html")):
+            return SEM_BUILD.format(FRONTEND), 503
         return send_from_directory(FRONTEND, "index.html")
 
     @app.get("/<path:arquivo>")
     def estatico(arquivo):
-        return send_from_directory(FRONTEND, arquivo)
+        caminho = os.path.join(FRONTEND, arquivo)
+        if os.path.isfile(caminho):
+            return send_from_directory(FRONTEND, arquivo)
+        return index()  # rota do Angular: quem resolve o caminho é o roteador dele
 
     # --- API ---
 
@@ -84,6 +102,20 @@ def create_app(db_path=None):
         # sem AniList e sem catálogo local não há como casar; a UI precisa saber
         dados["catalogo_local"] = os.path.exists(caminho_db())
         return jsonify(dados)
+
+    @app.get("/api/library")
+    def library():
+        """Biblioteca: só o que já tem vínculo com AniList ou MyAnimeList."""
+        with conn() as c:
+            return jsonify(_filtrar(linhas(db.biblioteca(c)), request.args.get("q", "")))
+
+    @app.get("/api/corrections")
+    def corrections():
+        """O que o sync deixou sem resolver: é o que a tela mostra ao fim."""
+        provider = request.args.get("provider") or None
+        with conn() as c:
+            return jsonify(_filtrar(linhas(db.precisam_correcao(c, provider)),
+                                    request.args.get("q", "")))
 
     @app.get("/api/catalog")
     def catalog():
@@ -141,9 +173,45 @@ def create_app(db_path=None):
 
         return iniciar("sync", executar)
 
+    @app.post("/api/crunchyroll")
+    def crunchyroll_start():
+        """Baixa a Crunchyroll, sem casar: o match é dos botões de provedor."""
+        force = bool((request.get_json(silent=True) or {}).get("force"))
+        if not force:
+            with conn() as c:
+                falta = sync.minutos_ate_liberar(c, _ttl())
+            if falta:
+                return jsonify({"erro": f"sincronizado há pouco; tente em {falta} min",
+                                "minutos_ate_liberar": falta}), 429
+        if not os.environ.get("CR_ETP_RT"):
+            return jsonify({"erro": "defina CR_ETP_RT no .env"}), 500
+
+        def executar(progresso):
+            cr = Crunchyroll().login(os.environ["CR_ETP_RT"])
+            with conn() as c:
+                return sync.run(cr, c, force=True, progresso=progresso, matcher=None)
+
+        return iniciar("crunchyroll", executar)
+
+    @app.post("/api/provider/<provider>")
+    def provider_start(provider):
+        """Procura as séries da nossa base Crunchyroll no provedor escolhido."""
+        if provider not in db.PROVIDERS:
+            return jsonify({"erro": f"provider deve ser um de {db.PROVIDERS}"}), 400
+        todas = bool((request.get_json(silent=True) or {}).get("todas"))
+
+        def executar(progresso):
+            with conn() as c:
+                r = sync.rodar_match(c, todas=todas, provider=provider,
+                                     progresso=progresso)
+                r["correcoes"] = len(db.precisam_correcao(c, provider))
+            return r
+
+        return iniciar(provider, executar)
+
     @app.post("/api/match")
     def match_start():
-        """Match sem tocar na Crunchyroll. `todas` recasa o que não foi revisado."""
+        """Compatibilidade: match no AniList, como antes."""
         todas = bool((request.get_json(silent=True) or {}).get("todas"))
 
         def executar(progresso):
@@ -172,7 +240,7 @@ def create_app(db_path=None):
                                    progresso=progresso)
             return {**ids, **rel, "oficial": cliente.oficial}
 
-        return iniciar("mal", executar)
+        return iniciar("mal-check", executar)
 
     # --- OAuth do AniList ---
 

@@ -31,12 +31,14 @@ def banco():
          "total_episodes": 12, "years": (2023, 2024)},
     ])
     db.save_matches(conn, [
-        {"season_id": "S1", "season_number": 1, "anilist_id": 108465,
-         "anilist_title": "Mushoku Tensei", "anilist_episodes": 11,
-         "anilist_url": "", "confidence": 1.0},
-        {"season_id": "S2", "season_number": 2, "anilist_id": 146065,
-         "anilist_title": "Mushoku Tensei II", "anilist_episodes": 12,
-         "anilist_url": "", "confidence": 1.0},
+        {"season_id": "S1", "season_number": 1,
+         "provider": "anilist", "provider_id": 108465,
+         "provider_title": "Mushoku Tensei", "provider_episodes": 11,
+         "provider_url": "", "confidence": 1.0},
+        {"season_id": "S2", "season_number": 2,
+         "provider": "anilist", "provider_id": 146065,
+         "provider_title": "Mushoku Tensei II", "provider_episodes": 12,
+         "provider_url": "", "confidence": 1.0},
     ])
     return conn
 

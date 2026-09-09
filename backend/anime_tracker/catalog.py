@@ -119,33 +119,46 @@ def caminho_db(path=None):
     return os.path.join(RAIZ, caminho)
 
 
+SITE = {"anilist": "https://anilist.co/anime/{}",
+        "mal": "https://myanimelist.net/anime/{}"}
+
+
 class OfflineIndex:
     """Mesma interface de AniList.search_many, servindo do catálogo local.
 
-Trocável por anilist.AniList sem o chamador saber a diferença."""
+    `provider` escolhe de quem é o id devolvido: as obras e os títulos são os
+    mesmos, muda o identificador que vai para o banco. Obra sem id do provedor
+    escolhido não entra — casar com ela produziria um vínculo que não dá para
+    exportar."""
 
-    def __init__(self, path=None):
+    def __init__(self, path=None, provider="anilist"):
+        if provider not in SITE:
+            raise ValueError(f"provider inválido: {provider}")
         # exceção, não sys.exit: isso também roda em thread do servidor
         entries = carregar(path)
+        self.provider = provider
+        padrao = ANILIST_URL if provider == "anilist" else MAL_URL
         self.media = []
         self.por_token = collections.defaultdict(list)
         for e in entries:
-            achado = next((ANILIST_URL.search(s) for s in e["sources"] if ANILIST_URL.search(s)), None)
-            if not achado:
-                continue  # sem id do AniList não serve para o nosso mapa
+            ident = _id(padrao, e["sources"])
+            if not ident:
+                continue
             titulos = [e["title"], *e.get("synonyms", [])]
             i = len(self.media)
             self.media.append({
-                "id": int(achado.group(1)),
+                "id": ident,
                 "title": {"romaji": e["title"], "english": None, "native": None},
                 "synonyms": e.get("synonyms", []),
                 "format": e.get("type"),
                 "episodes": e.get("episodes"),
                 "seasonYear": (e.get("animeSeason") or {}).get("year"),
-                "siteUrl": f"https://anilist.co/anime/{achado.group(1)}",
+                "siteUrl": SITE[provider].format(ident),
+                "status": e.get("status"),
             })
             for token in {t for titulo in titulos for t in normalize(titulo).split()}:
                 self.por_token[token].append(i)
+        log.info("índice %s: %d obras", provider, len(self.media))
 
     def search_many(self, terms):
         return {t: self._search(t) for t in terms}

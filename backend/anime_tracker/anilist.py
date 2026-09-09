@@ -230,8 +230,12 @@ def season_queries(series_title, season):
     return list(dict.fromkeys(termos))
 
 
-def match_seasons(client, series_title, seasons):
-    """Casa cada temporada da CR com uma obra do AniList."""
+def match_seasons(client, series_title, seasons, provider="anilist"):
+    """Casa cada temporada da CR com uma obra do provedor escolhido.
+
+    A saída é neutra (`provider_*`): o algoritmo é o mesmo para AniList e
+    MyAnimeList, muda só de quem é o id. Quem traduz para as colunas do banco
+    é db.save_matches."""
     todos = [q for s in seasons for q in season_queries(series_title, s)]
     resultados = client.search_many(todos)
 
@@ -252,10 +256,12 @@ def match_seasons(client, series_title, seasons):
             "season_number": season.get("season_number"),
             "season_title": season.get("season_title"),
             "cr_episodes": season.get("total_episodes"),
-            "anilist_id": media["id"] if media else None,
-            "anilist_title": (media["title"].get("romaji") if media else None),
-            "anilist_episodes": media.get("episodes") if media else None,
-            "anilist_url": media.get("siteUrl") if media else None,
+            "provider": provider,
+            "provider_id": media["id"] if media else None,
+            "provider_title": (media["title"].get("romaji") if media else None),
+            "provider_episodes": media.get("episodes") if media else None,
+            "provider_url": media.get("siteUrl") if media else None,
+            "provider_status": media.get("status") if media else None,
             "confidence": round(conf, 3),
             # abaixo do limiar nada é gravado como certo; fica para revisão manual
             "needs_review": conf < 0.9,
@@ -270,13 +276,13 @@ def flag_duplicates(seasons):
     confiança e manda a outra para revisão em vez de afirmar as duas."""
     melhor_por_id = {}
     for s in seasons:
-        aid = s["anilist_id"]
+        aid = s["provider_id"]
         if aid is None:
             continue
         if aid not in melhor_por_id or s["confidence"] > melhor_por_id[aid]["confidence"]:
             melhor_por_id[aid] = s
     for s in seasons:
-        aid = s["anilist_id"]
+        aid = s["provider_id"]
         if aid is not None and melhor_por_id[aid] is not s:
             s["needs_review"] = True
             s["duplicate_of"] = melhor_por_id[aid]["season_number"]

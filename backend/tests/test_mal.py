@@ -60,12 +60,14 @@ def banco():
          "total_episodes": 12, "years": (2023, 2024)},
     ])
     db.save_matches(conn, [
-        {"season_id": "S1", "season_number": 1, "anilist_id": 108465,
-         "anilist_title": "Mushoku Tensei", "anilist_episodes": 11,
-         "anilist_url": "", "confidence": 1.0},
-        {"season_id": "S2", "season_number": 2, "anilist_id": 146065,
-         "anilist_title": "Mushoku Tensei II", "anilist_episodes": 12,
-         "anilist_url": "", "confidence": 1.0},
+        {"season_id": "S1", "season_number": 1,
+         "provider": "anilist", "provider_id": 108465,
+         "provider_title": "Mushoku Tensei", "provider_episodes": 11,
+         "provider_url": "", "confidence": 1.0},
+        {"season_id": "S2", "season_number": 2,
+         "provider": "anilist", "provider_id": 146065,
+         "provider_title": "Mushoku Tensei II", "provider_episodes": 12,
+         "provider_url": "", "confidence": 1.0},
     ])
     return conn
 
@@ -112,25 +114,30 @@ def test_anilist_sem_par_no_catalogo_nao_estoura():
     assert r == {"resolvidos": 1, "sem_mapa": 1}
 
 
-def test_rematch_com_outro_anilist_id_descarta_o_mal_id():
-    """mal_id foi derivado do anilist_id: se o alvo mudou, ficou obsoleto."""
+def test_vinculos_dos_dois_provedores_sao_independentes():
+    """Antes o mal_id era derivado do anilist_id, e trocar um invalidava o outro.
+
+    Com um botão de sync por provedor, cada vínculo vem do seu próprio match:
+    recasar no AniList não pode apagar o que foi casado no MyAnimeList."""
     conn = banco()
     mal.resolver_ids(conn, MAPA)
-    db.save_matches(conn, [{"season_id": "S1", "season_number": 1, "anilist_id": 999,
-                            "anilist_title": "outro", "anilist_episodes": 1,
-                            "anilist_url": "", "confidence": 1.0}])
-    linha = conn.execute("SELECT mal_id FROM matches WHERE season_id='S1'").fetchone()
-    assert linha["mal_id"] is None, "manteria um id apontando para o anime errado"
+    db.save_matches(conn, [{"season_id": "S1", "season_number": 1,
+         "provider": "anilist", "provider_id": 999,
+         "provider_title": "outro", "provider_episodes": 1,
+         "provider_url": "", "confidence": 1.0}])
+    linha = conn.execute("SELECT anilist_id, mal_id FROM matches WHERE season_id='S1'").fetchone()
+    assert linha["anilist_id"] == 999, "o match do AniList tinha que ser atualizado"
+    assert linha["mal_id"] == 39535, "o vínculo do MyAnimeList não podia sumir junto"
 
 
-def test_rematch_com_o_mesmo_anilist_id_preserva_o_mal_id():
+def test_match_no_mal_nao_apaga_o_do_anilist():
     conn = banco()
-    mal.resolver_ids(conn, MAPA)
-    db.save_matches(conn, [{"season_id": "S1", "season_number": 1, "anilist_id": 108465,
-                            "anilist_title": "Mushoku Tensei", "anilist_episodes": 11,
-                            "anilist_url": "", "confidence": 1.0}])
-    linha = conn.execute("SELECT mal_id FROM matches WHERE season_id='S1'").fetchone()
-    assert linha["mal_id"] == 39535, "recasar igual não deveria custar nova resolução"
+    db.save_matches(conn, [{"season_id": "S1", "season_number": 1,
+         "provider": "mal", "provider_id": 39535, "provider_title": "Mushoku Tensei",
+         "provider_episodes": 11, "provider_url": "", "provider_status": "FINISHED",
+         "confidence": 1.0}])
+    linha = conn.execute("SELECT anilist_id, mal_id FROM matches WHERE season_id='S1'").fetchone()
+    assert linha["anilist_id"] == 108465 and linha["mal_id"] == 39535
 
 
 # --- cliente ---

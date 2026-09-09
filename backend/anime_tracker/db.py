@@ -226,53 +226,65 @@ def save_history(conn, episodes):
     conn.commit()
 
 
-def save_matches(conn, resultados):
+PROVIDERS = ("anilist", "mal")
+
+
+def save_matches(conn, resultados, provider=None):
     """Grava matches SEM tocar no que já foi revisado.
 
     O WHERE no ON CONFLICT é o ponto todo: rodar o matcher de novo não pode
-    desfazer uma decisão humana."""
-    linhas = []
-    for r in resultados:
-        if not r.get("season_id"):
-            continue
-        linhas.append({
+    desfazer uma decisão humana.
+
+    O resultado do matcher é neutro (`provider_*`); aqui ele vira coluna do
+    provedor escolhido. Um match no AniList não apaga o vínculo com o MAL e
+    vice-versa: uma temporada pode estar ligada aos dois."""
+    linhas = [r for r in resultados if r.get("season_id")]
+    if not linhas:
+        return 0
+
+    provider = provider or linhas[0].get("provider") or "anilist"
+    if provider not in PROVIDERS:
+        raise ValueError(f"provider inválido: {provider}")
+    # nomes vêm de uma lista fechada, então a interpolação é segura
+    p = provider
+
+    valores = [
+        {
             "season_id": r["season_id"],
-            "anilist_id": r["anilist_id"],
-            "anilist_title": r["anilist_title"],
-            "anilist_episodes": r["anilist_episodes"],
-            "anilist_url": r["anilist_url"],
+            "ident": r.get("provider_id"),
+            "titulo": r.get("provider_title"),
+            "episodios": r.get("provider_episodes"),
+            "url": r.get("provider_url"),
+            "status": r.get("provider_status"),
             "confidence": r["confidence"],
             "duplicate_of": r.get("duplicate_of"),
             "matched_at": agora(),
-        })
+        }
+        for r in linhas
+    ]
+    extra_url = f"{p}_url=excluded.{p}_url," if p == "anilist" else ""
+    colunas_url = f"{p}_url," if p == "anilist" else ""
+    valores_url = ":url," if p == "anilist" else ""
+    extra_status = f"{p}_status=excluded.{p}_status," if p == "mal" else ""
+    colunas_status = f"{p}_status," if p == "mal" else ""
+    valores_status = ":status," if p == "mal" else ""
+
     conn.executemany(
-        """INSERT INTO matches
-             (season_id, anilist_id, anilist_title, anilist_episodes, anilist_url,
-              confidence, duplicate_of, matched_at)
-           VALUES (:season_id, :anilist_id, :anilist_title, :anilist_episodes,
-                   :anilist_url, :confidence, :duplicate_of, :matched_at)
-           ON CONFLICT(season_id) DO UPDATE SET
-             anilist_id=excluded.anilist_id, anilist_title=excluded.anilist_title,
-             anilist_episodes=excluded.anilist_episodes,
-             anilist_url=excluded.anilist_url, confidence=excluded.confidence,
-             duplicate_of=excluded.duplicate_of, matched_at=excluded.matched_at,
-             -- o mal_id foi derivado do anilist_id: se o alvo mudou, ele
-             -- ficou obsoleto e manter apontaria para o anime errado
-             mal_id=CASE WHEN excluded.anilist_id IS matches.anilist_id
-                         THEN matches.mal_id ELSE NULL END,
-             mal_title=CASE WHEN excluded.anilist_id IS matches.anilist_id
-                            THEN matches.mal_title ELSE NULL END,
-             mal_episodes=CASE WHEN excluded.anilist_id IS matches.anilist_id
-                               THEN matches.mal_episodes ELSE NULL END,
-             mal_status=CASE WHEN excluded.anilist_id IS matches.anilist_id
-                             THEN matches.mal_status ELSE NULL END,
-             mal_checked_at=CASE WHEN excluded.anilist_id IS matches.anilist_id
-                                 THEN matches.mal_checked_at ELSE NULL END
-           WHERE matches.review_status = 'pending'""",
-        linhas,
+        f"""INSERT INTO matches
+              (season_id, {p}_id, {p}_title, {p}_episodes, {colunas_url}
+               {colunas_status} confidence, duplicate_of, matched_at)
+            VALUES (:season_id, :ident, :titulo, :episodios, {valores_url}
+                    {valores_status} :confidence, :duplicate_of, :matched_at)
+            ON CONFLICT(season_id) DO UPDATE SET
+              {p}_id=excluded.{p}_id, {p}_title=excluded.{p}_title,
+              {p}_episodes=excluded.{p}_episodes, {extra_url} {extra_status}
+              confidence=excluded.confidence,
+              duplicate_of=excluded.duplicate_of, matched_at=excluded.matched_at
+            WHERE matches.review_status = 'pending'""",
+        valores,
     )
     conn.commit()
-    return len(linhas)
+    return len(valores)
 
 
 def set_mal_ids(conn, pares):
@@ -329,6 +341,52 @@ def catalog(conn, limit=None):
     """Menu 1: temporadas com match resolvido, independente da revisão."""
     sql = "SELECT * FROM v_catalog"
     return conn.execute(sql + (f" LIMIT {int(limit)}" if limit else "")).fetchall()
+
+
+def biblioteca(conn):
+    """Tudo que já tem vínculo com algum provedor, com o rótulo de qual.
+
+    Uma temporada pode estar ligada aos dois; `providers` diz quais."""
+    return conn.execute(
+        """SELECT m.season_id, s.season_number, s.title AS season_title,
+                  s.total_episodes AS cr_episodes, se.title AS series_title,
+                  se.series_id, m.anilist_id, m.anilist_title, m.anilist_url,
+                  m.mal_id, m.mal_title, m.confidence, m.review_status,
+                  CASE WHEN m.anilist_id IS NOT NULL AND m.mal_id IS NOT NULL
+                         THEN 'anilist,mal'
+                       WHEN m.anilist_id IS NOT NULL THEN 'anilist'
+                       ELSE 'mal' END AS providers
+             FROM matches m
+             JOIN seasons s USING (season_id)
+             JOIN series se USING (series_id)
+            WHERE m.anilist_id IS NOT NULL OR m.mal_id IS NOT NULL
+            ORDER BY se.title, s.season_number"""
+    ).fetchall()
+
+
+def precisam_correcao(conn, provider=None):
+    """O que o sync não conseguiu resolver com confiança.
+
+    Três motivos, todos exigindo olho humano: nenhuma correspondência,
+    confiança baixa, ou duas temporadas apontando para a mesma obra."""
+    filtro = ""
+    if provider:
+        if provider not in PROVIDERS:
+            raise ValueError(f"provider inválido: {provider}")
+        filtro = f" AND (m.{provider}_id IS NULL OR m.confidence < 0.9 OR m.duplicate_of IS NOT NULL)"
+    else:
+        filtro = (" AND ((m.anilist_id IS NULL AND m.mal_id IS NULL)"
+                  " OR m.confidence < 0.9 OR m.duplicate_of IS NOT NULL)")
+    return conn.execute(
+        f"""SELECT m.*, s.season_number, s.title AS season_title,
+                   s.total_episodes AS cr_episodes, se.title AS series_title,
+                   se.series_id
+              FROM matches m
+              JOIN seasons s USING (season_id)
+              JOIN series se USING (series_id)
+             WHERE m.review_status = 'pending'{filtro}
+             ORDER BY m.confidence ASC, se.title"""
+    ).fetchall()
 
 
 def pending_review(conn, limit=None):
