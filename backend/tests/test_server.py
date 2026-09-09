@@ -214,6 +214,55 @@ def test_stats_distingue_banco_vazio():
     assert com_dados["series"] == 1 and com_dados["matched"] == 2
 
 
+def _esperar(cli, tentativas=100):
+    for _ in range(tentativas):
+        s = cli.get("/api/task").get_json()
+        if not s["rodando"]:
+            return s
+        time.sleep(0.1)
+    raise AssertionError("tarefa não terminou")
+
+
+def test_botao_mal_roda_a_tarefa():
+    """Botão Sincronizar MyAnimeList: resolve ids e confere, em background."""
+    cli, _ = app_com_dados()
+    r = cli.post("/api/mal", json={})
+    assert r.status_code == 202
+
+    s = _esperar(cli)
+    assert s["tipo"] == "mal"
+    # sem catálogo local a tarefa falha com instrução, sem derrubar o servidor
+    if s["erro"]:
+        assert "catálogo local" in s["erro"] or "CatalogoAusente" in s["erro"]
+    else:
+        assert "resolvidos" in s["resultado"] and "fonte" in s["resultado"]
+
+
+def test_mal_nao_roda_junto_com_outra_tarefa():
+    """Sync e MAL mexem nas mesmas tabelas: uma de cada vez."""
+    cli, _ = app_com_dados()
+    cli.post("/api/mal", json={})
+    segunda = cli.post("/api/mal", json={})
+    # ou a primeira já terminou (202) ou a segunda é recusada (409)
+    assert segunda.status_code in (202, 409)
+    if segunda.status_code == 409:
+        assert "andamento" in segunda.get_json()["erro"]
+    _esperar(cli)
+
+
+def test_stats_traz_contadores_do_mal():
+    cli, _ = app_com_dados()
+    s = cli.get("/api/stats").get_json()
+    assert s["com_mal_id"] == 0 and s["mal_conferidos"] == 0
+
+
+def test_botao_mal_aparece_no_frontend():
+    cli, _ = app_com_dados()
+    html = cli.get("/").data.decode()
+    assert 'id="mal"' in html
+    assert '/api/mal' in html
+
+
 def test_frontend_servido():
     cli, _ = app_com_dados()
     r = cli.get("/")

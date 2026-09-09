@@ -68,16 +68,19 @@
     background: #2a2416; border: 1px solid var(--alerta); border-radius: 8px;
     padding: 12px 14px; margin-bottom: 16px; font-size: 14px;
   }
+  .aviso.ok { background: #16221a; border-color: var(--ok); }
+  .aviso ul { margin: 6px 0 0; padding-left: 20px; }
   .aviso pre {
     background: var(--bg); padding: 8px 10px; border-radius: 6px;
     overflow-x: auto; font-size: 12px; margin: 8px 0 6px;
   }
-  #sincronizar, #casar {
+  #sincronizar, #casar, #mal {
     padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px;
     border: 1px solid var(--linha); background: #232733; color: var(--texto);
   }
-  #sincronizar:hover:not(:disabled), #casar:hover:not(:disabled) { border-color: var(--acento); }
-  #sincronizar:disabled, #casar:disabled { opacity: .6; cursor: default; }
+  #sincronizar:hover:not(:disabled), #casar:hover:not(:disabled),
+  #mal:hover:not(:disabled) { border-color: var(--acento); }
+  #sincronizar:disabled, #casar:disabled, #mal:disabled { opacity: .6; cursor: default; }
   #conectar {
     padding: 6px 12px; border-radius: 6px; text-decoration: none;
     font-size: 13px; border: 1px solid var(--linha); color: var(--texto);
@@ -94,6 +97,7 @@
   <span id="resumo"></span>
   <button id="sincronizar">Sincronizar</button>
   <button id="casar">Casar com AniList</button>
+  <button id="mal">Sincronizar MyAnimeList</button>
   <a id="conectar" href="/auth/anilist">Conectar AniList</a>
 </header>
 
@@ -240,7 +244,11 @@ function acoes(r, botoes, comCorrecao) {
 }
 
 let pollTarefa;
-const BOTOES = { sync: ["sincronizar", "Sincronizar"], match: ["casar", "Casar com AniList"] };
+const BOTOES = {
+  sync: ["sincronizar", "Sincronizar"],
+  match: ["casar", "Casar com AniList"],
+  mal: ["mal", "Sincronizar MyAnimeList"],
+};
 
 function travarBotoes(travado) {
   for (const [id] of Object.values(BOTOES)) $(id).disabled = travado;
@@ -294,6 +302,8 @@ function acompanharTarefa() {
 }
 
 function relatar(tipo, r, id) {
+  if (tipo === "mal") return relatarMal(r, id);
+
   // a fonte do match aparece: casar contra outra base não pode ser silencioso
   const fonte = r.fonte_match ? ` · via ${r.fonte_match}` : " · match não rodou";
   $(id).title = tipo === "sync"
@@ -310,18 +320,56 @@ function relatar(tipo, r, id) {
   }
 }
 
-function avisarSemMatch() {
+function relatarMal(r, id) {
+  $(id).title = `${r.resolvidos} ids resolvidos · ${r.checados} conferidos via ${r.fonte}`;
+
+  const partes = [
+    `<strong>MyAnimeList: ${r.resolvidos} ids resolvidos, ${r.checados} conferidos</strong>`,
+    `Fonte: ${r.fonte}.`,
+  ];
+  if (r.sem_mapa) partes.push(`${r.sem_mapa} sem correspondência no catálogo local.`);
+  if (r.divergentes?.length) {
+    partes.push(`<br><strong>${r.divergentes.length} divergência(s)</strong> — o que o` +
+      " MyAnimeList diz não bate com o nosso match:<ul>" +
+      r.divergentes.slice(0, 10).map(d =>
+        `<li>${escapar(d.serie)} T${d.temporada}: ${escapar(d.motivo)}</li>`).join("") +
+      (r.divergentes.length > 10 ? `<li>... e mais ${r.divergentes.length - 10}</li>` : "") +
+      "</ul>Nada foi corrigido automaticamente: revise na aba a revisar.");
+  }
+  if (r.erros?.length) {
+    partes.push(`<br><strong>${r.erros.length} erro(s) de conexão.</strong>`);
+    // o Jikan é proxy do MAL e anda falhando; a chave oficial contorna
+    if (!r.oficial) {
+      partes.push("O Jikan é um proxy do MyAnimeList e anda falhando em alcançá-lo." +
+        " Preencha <code>MAL_CLIENT_ID</code> no <code>.env</code> para usar a API oficial" +
+        " (myanimelist.net/apiconfig).");
+    }
+  }
+  mostrarAviso(partes.join(" "), r.divergentes?.length || r.erros?.length ? "aviso" : "aviso ok");
+}
+
+function escapar(texto) {
+  const d = document.createElement("div");
+  d.textContent = texto ?? "";
+  return d.innerHTML;
+}
+
+function mostrarAviso(html, classe = "aviso") {
   const aviso = document.createElement("div");
-  aviso.className = "aviso";
-  aviso.innerHTML =
+  aviso.className = classe;
+  aviso.innerHTML = html;
+  const main = document.querySelector("main");
+  main.querySelector(".aviso")?.remove();
+  main.prepend(aviso);
+}
+
+function avisarSemMatch() {
+  mostrarAviso(
     "<strong>Séries sincronizadas, mas nenhuma foi casada com o AniList.</strong>" +
     "<br>A API do AniList está indisponível e o catálogo local não foi encontrado. " +
     "Baixe-o uma vez e sincronize de novo:" +
     "<pre>curl -L -o .cache/anime-db.json " + URL_CATALOGO + "</pre>" +
-    "No Windows use <code>curl.exe</code>, e crie a pasta antes com <code>mkdir .cache</code>.";
-  const main = document.querySelector("main");
-  main.querySelector(".aviso")?.remove();
-  main.prepend(aviso);
+    "No Windows use <code>curl.exe</code>, e crie a pasta antes com <code>mkdir .cache</code>.");
 }
 
 async function resumo() {
@@ -354,6 +402,7 @@ $("busca").oninput = (e) => {
 
 $("sincronizar").onclick = () => iniciarTarefa("sync", "/api/sync", {});
 $("casar").onclick = () => iniciarTarefa("match", "/api/match", {});
+$("mal").onclick = () => iniciarTarefa("mal", "/api/mal", {});
 
 resumo().then(carregar);
 // se um sync já estiver rodando (outra aba, ou reload no meio), acompanha

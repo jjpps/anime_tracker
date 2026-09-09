@@ -152,6 +152,27 @@ def create_app(db_path=None):
 
         return iniciar("match", executar)
 
+    @app.post("/api/mal")
+    def mal_start():
+        """Resolve mal_id pelo catálogo e confere contra a API do MyAnimeList."""
+        corpo = request.get_json(silent=True) or {}
+        revalidar = bool(corpo.get("revalidar"))
+        limite = corpo.get("limite")
+
+        def executar(progresso):
+            from .catalog import mapa_anilist_para_mal
+            from .mal import MALClient, double_check, resolver_ids
+
+            mapa = mapa_anilist_para_mal()
+            with conn() as c:
+                ids = resolver_ids(c, mapa, progresso=progresso)
+                cliente = MALClient(os.environ.get("MAL_CLIENT_ID"))
+                rel = double_check(c, cliente, limite=limite, revalidar=revalidar,
+                                   progresso=progresso)
+            return {**ids, **rel, "oficial": cliente.oficial}
+
+        return iniciar("mal", executar)
+
     # --- OAuth do AniList ---
 
     @app.get("/auth/anilist")

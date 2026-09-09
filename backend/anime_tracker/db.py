@@ -350,7 +350,9 @@ def stats(conn):
              (SELECT COUNT(*) FROM matches WHERE anilist_id IS NOT NULL)          AS matched,
              (SELECT COUNT(*) FROM matches WHERE review_status = 'pending')       AS pending,
              (SELECT COUNT(*) FROM matches WHERE review_status = 'confirmed')     AS confirmed,
-             (SELECT COUNT(*) FROM matches WHERE review_status = 'rejected')      AS rejected"""
+             (SELECT COUNT(*) FROM matches WHERE review_status = 'rejected')      AS rejected,
+             (SELECT COUNT(*) FROM matches WHERE mal_id IS NOT NULL)             AS com_mal_id,
+             (SELECT COUNT(*) FROM matches WHERE mal_checked_at IS NOT NULL)     AS mal_conferidos"""
     ).fetchone()
     return dict(linha)
 
