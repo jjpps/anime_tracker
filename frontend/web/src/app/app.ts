@@ -1,9 +1,9 @@
-import { Component, OnDestroy, inject, signal, computed } from '@angular/core';
+import { Component, OnDestroy, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Api, Correcao, ItemBiblioteca, Provider, Stats } from './api';
 
-type Tela = 'inicio' | 'biblioteca' | 'correcoes';
+type Tela = 'inicio' | 'biblioteca' | 'pendentes';
 
 @Component({
   selector: 'app-root',
@@ -18,7 +18,7 @@ export class App implements OnDestroy {
   tela = signal<Tela>('inicio');
   stats = signal<Stats | null>(null);
   biblioteca = signal<ItemBiblioteca[]>([]);
-  correcoes = signal<Correcao[]>([]);
+  pendentes = signal<Correcao[]>([]);
   busca = signal('');
   carregando = signal(false);
   erro = signal<string | null>(null);
@@ -134,37 +134,48 @@ export class App implements OnDestroy {
         this.ultimoResultado.set(t.resultado);
         this.recarregarStats();
 
-        // ao fim do sync de um provedor, mostra só o que precisa de correção
-        const provider = this.provedorDe(t.tipo);
-        if (!t.erro && provider) this.abrirCorrecoes(provider);
+        // ao fim do sync, mostra só o que ficou pendente de match
+        if (!t.erro && this.provedorDe(t.tipo)) this.abrirPendentes();
       });
     }, 1000);
   }
 
-  abrirCorrecoes(provider: Provider) {
-    this.tela.set('correcoes');
+  abrirPendentes() {
+    this.tela.set('pendentes');
     this.carregando.set(true);
-    this.api.correcoes(provider, this.busca()).subscribe({
+    this.api.pendentes(this.busca()).subscribe({
       next: (itens) => {
-        this.correcoes.set(itens);
+        this.pendentes.set(itens);
         this.carregando.set(false);
       },
       error: () => this.carregando.set(false),
     });
   }
 
-  decidir(item: Correcao, status: string, idDigitado: string) {
-    const id = idDigitado ? Number(idDigitado) : undefined;
-    this.api.revisar(item.season_id, status, id).subscribe({
-      next: () => {
-        this.correcoes.update((lista) => lista.filter((x) => x.season_id !== item.season_id));
-        this.recarregarStats();
-      },
-      error: (e) => this.erro.set(e?.error?.erro ?? 'não foi possível salvar'),
+  /** 5. vincula o id digitado ao anime e tira da fila. */
+  vincular(item: Correcao, provider: Provider, idDigitado: string) {
+    const id = Number(idDigitado);
+    if (!id) {
+      this.erro.set('digite o id do provedor');
+      return;
+    }
+    this.api.vincular(item.season_id, provider, id).subscribe({
+      next: () => this.tirarDaFila(item),
+      error: (e) => this.erro.set(e?.error?.erro ?? 'não foi possível vincular'),
     });
   }
 
-  etiquetas = computed(() => (item: ItemBiblioteca) => item.providers.split(','));
+  dispensar(item: Correcao) {
+    this.api.dispensar(item.season_id).subscribe({
+      next: () => this.tirarDaFila(item),
+      error: (e) => this.erro.set(e?.error?.erro ?? 'não foi possível dispensar'),
+    });
+  }
+
+  private tirarDaFila(item: Correcao) {
+    this.pendentes.update((lista) => lista.filter((x) => x.season_id !== item.season_id));
+    this.recarregarStats();
+  }
 
   temVinculo(item: ItemBiblioteca, p: Provider): boolean {
     return item.providers.split(',').includes(p);

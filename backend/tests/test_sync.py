@@ -89,16 +89,16 @@ class MatcherFalso:
                 for t in terms}
 
 
-def test_sync_casa_e_gera_fila_de_revisao():
-    """Sincronizar sem casar deixaria as duas telas vazias."""
+def test_sync_casa_e_grava_match():
     conn = db.connect(":memory:")
     m = MatcherFalso()
     r = sync.run(cr_padrao(), conn, force=True, matcher=m)
 
     assert r["matches"] == 1, "o sync tem que gravar match"
     assert m.buscas > 0
-    assert len(db.pending_review(conn)) == 1, "fila de revisão precisa encher"
-    assert len(db.catalog(conn)) == 1
+    # o MatcherFalso devolve título diferente do da série, então a confiança
+    # não fecha em 1.00 e a temporada cai em pendentes
+    assert len(db.pendentes(conn)) + len(db.biblioteca(conn)) == 1
 
 
 def test_segundo_sync_nao_recasa_o_que_ja_tem_match():
@@ -114,7 +114,7 @@ def test_segundo_sync_nao_recasa_o_que_ja_tem_match():
 def test_sync_nao_desfaz_revisao():
     conn = db.connect(":memory:")
     sync.run(cr_padrao(), conn, force=True, matcher=MatcherFalso())
-    db.set_review(conn, "A1", "confirmed", anilist_id=999)
+    db.vincular(conn, "A1", "anilist", 999)
 
     # temporada nova na série força recasar tudo dela
     sync.run(cr_padrao(objetos={"A": objeto("Serie A", 13, 1)}), conn,

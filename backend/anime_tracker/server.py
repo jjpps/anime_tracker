@@ -7,12 +7,11 @@ que o frontend consome.
 import contextlib
 import logging
 import os
-import secrets
 import threading
 
 from flask import Flask, jsonify, redirect, request, send_from_directory
 
-from . import db, oauth, sync
+from . import db, sync
 from .crunchyroll import Crunchyroll, CrunchyrollError
 from .config import load_env
 
@@ -98,54 +97,49 @@ def create_app(db_path=None):
 
         with conn() as c:
             dados = db.stats(c)
-            dados["anilist_conectado"] = bool(db.get_setting(c, oauth.TOKEN_KEY))
         # sem AniList e sem catálogo local não há como casar; a UI precisa saber
         dados["catalogo_local"] = os.path.exists(caminho_db())
         return jsonify(dados)
 
     @app.get("/api/library")
     def library():
-        """Biblioteca: só o que já tem vínculo com AniList ou MyAnimeList."""
+        """3. biblioteca: os matches já resolvidos."""
         with conn() as c:
             return jsonify(_filtrar(linhas(db.biblioteca(c)), request.args.get("q", "")))
 
-    @app.get("/api/corrections")
-    def corrections():
-        """O que o sync deixou sem resolver: é o que a tela mostra ao fim."""
-        provider = request.args.get("provider") or None
-        with conn() as c:
-            return jsonify(_filtrar(linhas(db.precisam_correcao(c, provider)),
-                                    request.args.get("q", "")))
-
-    @app.get("/api/catalog")
-    def catalog():
-        """Menu 1: o que tem correspondência no AniList, revisado ou não."""
-        with conn() as c:
-            return jsonify(_filtrar(linhas(db.catalog(c)), request.args.get("q", "")))
-
     @app.get("/api/pending")
     def pending():
-        """Menu 2: o que falta revisar."""
+        """4. pendentes de match: o que não fechou em 1.00."""
         with conn() as c:
-            return jsonify(_filtrar(linhas(db.pending_review(c)), request.args.get("q", "")))
+            return jsonify(_filtrar(linhas(db.pendentes(c)), request.args.get("q", "")))
 
-    @app.post("/api/review/<season_id>")
-    def review(season_id):
+    @app.post("/api/link/<season_id>")
+    def link(season_id):
+        """5. vincula o id do provedor ao anime, na mão."""
         corpo = request.get_json(silent=True) or {}
-        status = corpo.get("status")
-        if status not in ("confirmed", "rejected", "pending"):
-            return jsonify({"erro": "status deve ser confirmed, rejected ou pending"}), 400
-        anilist_id = corpo.get("anilist_id")
-        if anilist_id is not None:
-            try:
-                anilist_id = int(anilist_id)
-            except (TypeError, ValueError):
-                return jsonify({"erro": "anilist_id deve ser inteiro"}), 400
+        provider = corpo.get("provider")
+        if provider not in db.PROVIDERS:
+            return jsonify({"erro": f"provider deve ser um de {db.PROVIDERS}"}), 400
+        try:
+            provider_id = int(corpo.get("provider_id"))
+        except (TypeError, ValueError):
+            return jsonify({"erro": "provider_id deve ser inteiro"}), 400
+
         with conn() as c:
-            n = db.set_review(c, season_id, status, anilist_id)
+            n = db.vincular(c, season_id, provider, provider_id, corpo.get("title"))
         if not n:
             return jsonify({"erro": "season_id não encontrado"}), 404
-        return jsonify({"season_id": season_id, "status": status})
+        return jsonify({"season_id": season_id, "provider": provider,
+                        "provider_id": provider_id})
+
+    @app.post("/api/dismiss/<season_id>")
+    def dismiss(season_id):
+        """Tira da fila o que não tem par no provedor (filme, especial...)."""
+        with conn() as c:
+            n = db.set_review(c, season_id, "rejected")
+        if not n:
+            return jsonify({"erro": "season_id não encontrado"}), 404
+        return jsonify({"season_id": season_id, "status": "rejected"})
 
     @app.get("/api/task")
     def task_status():
@@ -153,25 +147,6 @@ def create_app(db_path=None):
             falta = sync.minutos_ate_liberar(c, _ttl())
             ultimo = db.get_setting(c, sync.ULTIMO_SYNC)
         return jsonify({**tarefa, "minutos_ate_liberar": falta, "ultimo_sync": ultimo})
-
-    @app.post("/api/sync")
-    def sync_start():
-        force = bool((request.get_json(silent=True) or {}).get("force"))
-        if not force:
-            with conn() as c:
-                falta = sync.minutos_ate_liberar(c, _ttl())
-            if falta:
-                return jsonify({"erro": f"sincronizado há pouco; tente em {falta} min",
-                                "minutos_ate_liberar": falta}), 429
-        if not os.environ.get("CR_ETP_RT"):
-            return jsonify({"erro": "defina CR_ETP_RT no .env"}), 500
-
-        def executar(progresso):
-            cr = Crunchyroll().login(os.environ["CR_ETP_RT"])
-            with conn() as c:
-                return sync.run(cr, c, force=force, ttl_horas=_ttl(), progresso=progresso)
-
-        return iniciar("sync", executar)
 
     @app.post("/api/crunchyroll")
     def crunchyroll_start():
@@ -204,78 +179,11 @@ def create_app(db_path=None):
             with conn() as c:
                 r = sync.rodar_match(c, todas=todas, provider=provider,
                                      progresso=progresso)
-                r["correcoes"] = len(db.precisam_correcao(c, provider))
+                r["pendentes"] = len(db.pendentes(c))
             return r
 
         return iniciar(provider, executar)
 
-    @app.post("/api/match")
-    def match_start():
-        """Compatibilidade: match no AniList, como antes."""
-        todas = bool((request.get_json(silent=True) or {}).get("todas"))
-
-        def executar(progresso):
-            with conn() as c:
-                return sync.rodar_match(c, todas=todas, progresso=progresso)
-
-        return iniciar("match", executar)
-
-    @app.post("/api/mal")
-    def mal_start():
-        """Resolve mal_id pelo catálogo e confere contra a API do MyAnimeList."""
-        corpo = request.get_json(silent=True) or {}
-        revalidar = bool(corpo.get("revalidar"))
-        limite = corpo.get("limite")
-
-        def executar(progresso):
-            from .catalog import garantir, mapa_anilist_para_mal
-            from .mal import MALClient, double_check, resolver_ids
-
-            garantir(progresso=progresso)  # baixa na primeira vez
-            mapa = mapa_anilist_para_mal()
-            with conn() as c:
-                ids = resolver_ids(c, mapa, progresso=progresso)
-                cliente = MALClient(os.environ.get("MAL_CLIENT_ID"))
-                rel = double_check(c, cliente, limite=limite, revalidar=revalidar,
-                                   progresso=progresso)
-            return {**ids, **rel, "oficial": cliente.oficial}
-
-        return iniciar("mal-check", executar)
-
-    # --- OAuth do AniList ---
-
-    @app.get("/auth/anilist")
-    def auth_start():
-        client_id, _, redirect_uri = oauth.credentials()
-        if not client_id:
-            return jsonify({"erro": "defina ANILIST_CLIENT_ID"}), 500
-        state = oauth.new_state()
-        with conn() as c:
-            db.set_setting(c, oauth.STATE_KEY, state)
-        return redirect(oauth.authorize_url(client_id, redirect_uri, state))
-
-    @app.get("/auth/anilist/callback")
-    def auth_callback():
-        client_id, client_secret, redirect_uri = oauth.credentials()
-        code = request.args.get("code")
-        recebido = request.args.get("state", "")
-        if not code:
-            return jsonify({"erro": request.args.get("error", "callback sem code")}), 400
-
-        with conn() as c:
-            esperado = db.get_setting(c, oauth.STATE_KEY, "")
-            # state confere a origem do callback; sem isso qualquer página
-            # poderia disparar a troca do code
-            if not esperado or not secrets.compare_digest(esperado, recebido):
-                return jsonify({"erro": "state inválido"}), 400
-            db.set_setting(c, oauth.STATE_KEY, "")
-            try:
-                token = oauth.exchange_code(code, client_id, client_secret, redirect_uri)
-            except oauth.OAuthError as e:
-                return jsonify({"erro": str(e)}), 502
-            db.set_setting(c, oauth.TOKEN_KEY, token)
-        logging.getLogger("anime_tracker.oauth").info("token do AniList gravado")
-        return redirect("/?anilist=ok")
 
     return app
 

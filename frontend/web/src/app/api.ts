@@ -47,10 +47,9 @@ export interface Stats {
   pending: number;
   confirmed: number;
   rejected: number;
-  com_mal_id: number;
-  mal_conferidos: number;
+  com_anilist: number;
+  com_mal: number;
   catalogo_local: boolean;
-  anilist_conectado: boolean;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -65,10 +64,8 @@ export class Api {
     return this.http.get<ItemBiblioteca[]>('/api/library', { params: { q } });
   }
 
-  correcoes(provider?: Provider, q = ''): Observable<Correcao[]> {
-    const params: Record<string, string> = { q };
-    if (provider) params['provider'] = provider;
-    return this.http.get<Correcao[]>('/api/corrections', { params });
+  pendentes(q = ''): Observable<Correcao[]> {
+    return this.http.get<Correcao[]>('/api/pending', { params: { q } });
   }
 
   tarefa(): Observable<Tarefa> {
@@ -83,9 +80,14 @@ export class Api {
     return this.http.post<{ iniciado: boolean }>(`/api/provider/${provider}`, {});
   }
 
-  revisar(seasonId: string, status: string, anilistId?: number) {
-    const corpo: Record<string, unknown> = { status };
-    if (anilistId) corpo['anilist_id'] = anilistId;
-    return this.http.post(`/api/review/${encodeURIComponent(seasonId)}`, corpo);
+  /** 5. vincula o id do provedor ao anime. */
+  vincular(seasonId: string, provider: Provider, providerId: number) {
+    return this.http.post(`/api/link/${encodeURIComponent(seasonId)}`,
+      { provider, provider_id: providerId });
+  }
+
+  /** Tira da fila o que não tem par no provedor (filme, especial...). */
+  dispensar(seasonId: string) {
+    return this.http.post(`/api/dismiss/${encodeURIComponent(seasonId)}`, {});
   }
 }
