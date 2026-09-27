@@ -1,4 +1,4 @@
-"""Servidor HTTP: serve o frontend, a API de revisão e o callback do AniList.
+"""Servidor HTTP: serve o frontend e a API.
 
 Regra de camada: aqui não mora regra de negócio. Tudo vem de db.py, que é o
 que o frontend consome.
@@ -9,9 +9,9 @@ import logging
 import os
 import threading
 
-from flask import Flask, jsonify, redirect, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory
 
-from . import db, sync
+from . import db, novidades, sync
 from .crunchyroll import Crunchyroll, CrunchyrollError
 from .config import load_env
 
@@ -31,7 +31,7 @@ npm run build</pre>
 
 
 def create_app(db_path=None):
-    # os logs do AniList e do sync saem no terminal junto com os do Flask
+    # os logs do sync saem no terminal junto com os do Flask
     logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
     load_env()
     app = Flask(__name__, static_folder=None)
@@ -44,7 +44,7 @@ def create_app(db_path=None):
     def linhas(rows):
         return [dict(r) for r in rows]
 
-    # uma tarefa de fundo por vez: sync e match mexem nas mesmas tabelas
+    # uma tarefa de fundo por vez: dois syncs mexeriam nas mesmas tabelas
     tarefa = {"rodando": False, "tipo": None, "etapa": "", "feito": 0, "total": 0,
               "resultado": None, "erro": None}
     trava = threading.Lock()
@@ -93,64 +93,26 @@ def create_app(db_path=None):
 
     @app.get("/api/stats")
     def stats():
-        from .catalog import caminho_db
-
         with conn() as c:
-            dados = db.stats(c)
-        # sem AniList e sem catálogo local não há como casar; a UI precisa saber
-        dados["catalogo_local"] = os.path.exists(caminho_db())
-        return jsonify(dados)
+            return jsonify(db.stats(c))
 
-    @app.get("/api/library")
-    def library():
-        """3. biblioteca: os matches já resolvidos."""
+    @app.get("/api/novidades")
+    def lista_novidades():
         with conn() as c:
-            return jsonify(_filtrar(linhas(db.biblioteca(c)), request.args.get("q", "")))
-
-    @app.get("/api/pending")
-    def pending():
-        """4. pendentes de match: o que não fechou em 1.00."""
-        with conn() as c:
-            return jsonify(_filtrar(linhas(db.pendentes(c)), request.args.get("q", "")))
-
-    @app.post("/api/link/<season_id>")
-    def link(season_id):
-        """5. vincula o id do provedor ao anime, na mão."""
-        corpo = request.get_json(silent=True) or {}
-        provider = corpo.get("provider")
-        if provider not in db.PROVIDERS:
-            return jsonify({"erro": f"provider deve ser um de {db.PROVIDERS}"}), 400
-        try:
-            provider_id = int(corpo.get("provider_id"))
-        except (TypeError, ValueError):
-            return jsonify({"erro": "provider_id deve ser inteiro"}), 400
-
-        with conn() as c:
-            n = db.vincular(c, season_id, provider, provider_id, corpo.get("title"))
-        if not n:
-            return jsonify({"erro": "season_id não encontrado"}), 404
-        return jsonify({"season_id": season_id, "provider": provider,
-                        "provider_id": provider_id})
-
-    @app.post("/api/dismiss/<season_id>")
-    def dismiss(season_id):
-        """Tira da fila o que não tem par no provedor (filme, especial...)."""
-        with conn() as c:
-            n = db.set_review(c, season_id, "rejected")
-        if not n:
-            return jsonify({"erro": "season_id não encontrado"}), 404
-        return jsonify({"season_id": season_id, "status": "rejected"})
+            return jsonify(novidades.lista(c))
 
     @app.get("/api/task")
     def task_status():
         with conn() as c:
             falta = sync.minutos_ate_liberar(c, _ttl())
             ultimo = db.get_setting(c, sync.ULTIMO_SYNC)
-        return jsonify({**tarefa, "minutos_ate_liberar": falta, "ultimo_sync": ultimo})
+            erro_sync = db.get_setting(c, sync.ULTIMO_ERRO)
+        return jsonify({**tarefa, "minutos_ate_liberar": falta, "ultimo_sync": ultimo,
+                        "erro_sync": erro_sync})
 
     @app.post("/api/crunchyroll")
     def crunchyroll_start():
-        """Baixa a Crunchyroll, sem casar: o match é dos botões de provedor."""
+        """Baixa histórico, temporadas e episódios da Crunchyroll."""
         force = bool((request.get_json(silent=True) or {}).get("force"))
         if not force:
             with conn() as c:
@@ -162,28 +124,11 @@ def create_app(db_path=None):
             return jsonify({"erro": "defina CR_ETP_RT no .env"}), 500
 
         def executar(progresso):
-            cr = Crunchyroll().login(os.environ["CR_ETP_RT"])
-            with conn() as c:
-                return sync.run(cr, c, force=True, progresso=progresso, matcher=None)
+            with conn() as c, sync.registrando_erro(c):
+                cr = Crunchyroll().login(os.environ["CR_ETP_RT"])
+                return sync.run(cr, c, force=True, progresso=progresso)
 
         return iniciar("crunchyroll", executar)
-
-    @app.post("/api/provider/<provider>")
-    def provider_start(provider):
-        """Procura as séries da nossa base Crunchyroll no provedor escolhido."""
-        if provider not in db.PROVIDERS:
-            return jsonify({"erro": f"provider deve ser um de {db.PROVIDERS}"}), 400
-        todas = bool((request.get_json(silent=True) or {}).get("todas"))
-
-        def executar(progresso):
-            with conn() as c:
-                r = sync.rodar_match(c, todas=todas, provider=provider,
-                                     progresso=progresso)
-                r["pendentes"] = len(db.pendentes(c))
-            return r
-
-        return iniciar(provider, executar)
-
 
     return app
 
@@ -193,10 +138,3 @@ def _ttl():
         return int(os.environ.get("SYNC_TTL_HORAS", sync.TTL_HORAS))
     except ValueError:
         return sync.TTL_HORAS
-
-
-def _filtrar(rows, q):
-    if not q:
-        return rows
-    q = q.lower()
-    return [r for r in rows if q in (r.get("series_title") or "").lower()]

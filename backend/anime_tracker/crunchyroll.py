@@ -1,4 +1,4 @@
-"""Cliente mínimo da API do Crunchyroll (auth via cookie etp_rt + watch history).
+"""Cliente mínimo da API do Crunchyroll (auth via cookie etp_rt, histórico, temporadas).
 
 Extraído de github.com/ruflas/crunchyexporter-cli — só o que é essencial.
 
@@ -103,16 +103,6 @@ class Crunchyroll:
             obj = series.get(item.get("parent_id"), {})
             yield parse_history_item(item, series_title=obj.get("title"))
 
-    def watchlist(self, locale="en-US", page_size=100):
-        """Itera a watchlist. O endpoint só devolve ids, então resolvemos
-        os metadados em lote via cms/objects."""
-        entries = {e["id"]: e for e in self._paginate("watchlist", dict, locale, page_size)}
-        objetos = self.resolve_objects(list(entries), locale)
-        for series_id, entry in entries.items():
-            # id que o cms não resolveu (removido/fora da região) vira stub em
-            # vez de sumir calado
-            yield parse_watchlist_item(objetos.get(series_id, {"id": series_id}), entry)
-
     def resolve_objects(self, ids, locale="en-US", chunk_size=50):
         """id -> objeto do catálogo, em lote. Ids removidos simplesmente faltam."""
         ids = [i for i in dict.fromkeys(ids) if i]
@@ -129,12 +119,12 @@ class Crunchyroll:
             out.update({obj["id"]: obj for obj in data})
         return out
 
-    def seasons(self, series_id, locale="en-US", with_years=True):
-        """Temporadas de uma série, com contagem de episódios e faixa de anos.
+    def seasons(self, series_id, locale="en-US", with_episodes=True):
+        """Temporadas de uma série, com os episódios de cada uma.
 
-        Os anos custam uma chamada por temporada, mas são o que separa uma
-        temporada da outra quando o título é idêntico — a CR junta em uma
-        temporada o que outros catálogos quebram em duas."""
+        Os episódios custam uma chamada por temporada, mas são o que mostra a
+        continuação: a CR anexa a parte seguinte à mesma temporada, então só a
+        data de cada episódio diz o que saiu depois."""
         data = self._get(f"/content/v2/cms/series/{series_id}/seasons",
                          params={"locale": locale}).get("data", [])
         out = []
@@ -144,22 +134,18 @@ class Crunchyroll:
                 "season_number": _num(s.get("season_number"), int, 0),
                 "season_title": s.get("title", ""),
                 "total_episodes": _num(s.get("number_of_episodes"), int, 0),
-                "years": None,
+                "episodes": [],
             }
-            if with_years:
-                season["years"] = self.season_years(season["season_id"], locale)
+            if with_episodes:
+                season["episodes"] = self.episodes(season["season_id"], locale)
             out.append(season)
         return out
 
-    def season_years(self, season_id, locale="en-US"):
-        """(primeiro ano, último ano) de exibição, ou None se a CR não informa."""
-        episodes = self._get(f"/content/v2/cms/seasons/{season_id}/episodes",
-                             params={"locale": locale}).get("data", [])
-        anos = sorted(
-            _num((e.get("episode_air_date") or "")[:4], int, 0) for e in episodes
-        )
-        anos = [a for a in anos if a]
-        return (anos[0], anos[-1]) if anos else None
+    def episodes(self, season_id, locale="en-US"):
+        """[{episode_number, released_at}] de uma temporada."""
+        data = self._get(f"/content/v2/cms/seasons/{season_id}/episodes",
+                         params={"locale": locale}).get("data", [])
+        return [ep for ep in map(parse_episode, data) if ep["episode_number"] is not None]
 
     def _paginate(self, endpoint, parse, locale, page_size):
         page = 1
@@ -200,18 +186,13 @@ def parse_history_item(item: dict, series_title=None) -> dict:
     }
 
 
-def parse_watchlist_item(obj: dict, entry: dict) -> dict:
-    """Junta o objeto da série (cms/objects) com a entrada da watchlist."""
-    meta = obj.get("series_metadata", {})
+def parse_episode(e: dict) -> dict:
+    """Data de chegada na CR, não a de exibição no Japão: anime antigo que
+    entra no catálogo agora é novidade para quem assiste aqui."""
     return {
-        "series_id": obj.get("id", ""),
-        "series_title": obj.get("title", "unknown"),
-        "total_episodes": _num(meta.get("episode_count"), int, 0),
-        "total_seasons": _num(meta.get("season_count"), int, 0),
-        # séries fora da região voltam com contagem zerada — vale saber por quê
-        "availability": meta.get("availability_status", "unknown"),
-        "added_at": entry.get("date_added"),
-        "is_favorite": entry.get("is_favorite", False),
+        "episode_number": _num(e.get("episode_number"), float, None),
+        "released_at": e.get("premium_available_date") or e.get("availability_starts")
+                       or e.get("episode_air_date"),
     }
 
 
@@ -262,19 +243,9 @@ if __name__ == "__main__":
     # sem panel não se inventa posição: T1E0 viraria episódio assistido fantasma
     assert sem_panel["season_number"] is None and sem_panel["episode_number"] is None
 
-    wl = parse_watchlist_item(
-        {
-            "id": "GY5P48XEY",
-            "title": "Frieren",
-            "series_metadata": {"episode_count": 28, "season_count": 1},
-        },
-        {"date_added": "2026-01-01T00:00:00Z", "is_favorite": True},
-    )
-    assert wl["series_id"] == "GY5P48XEY" and wl["total_episodes"] == 28
-    assert wl["is_favorite"] is True and wl["added_at"].startswith("2026")
+    ep = parse_episode({"episode_number": 25, "episode_air_date": "2020-01-01T00:00:00Z",
+                        "premium_available_date": "2026-04-02T15:00:00Z"})
+    assert ep == {"episode_number": 25.0, "released_at": "2026-04-02T15:00:00Z"}
+    assert parse_episode({"episode_number": None})["episode_number"] is None
 
-    bare = parse_watchlist_item({"id": "X"}, {})
-    assert bare["series_title"] == "unknown" and bare["total_episodes"] == 0
-    assert bare["added_at"] is None and bare["is_favorite"] is False
-    assert bare["availability"] == "unknown"
     print("ok")

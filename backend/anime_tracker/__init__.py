@@ -1,1 +1,1 @@
-"""Backend do anime-tracker: Crunchyroll + AniList em SQLite."""
+"""Backend do anime-tracker: histórico e catálogo da Crunchyroll em SQLite."""

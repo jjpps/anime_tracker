@@ -1,22 +1,17 @@
-# credenciais — o etp_rt da Crunchyroll e o client secret do AniList
+# credenciais — o etp_rt da Crunchyroll
 .env
 .env.*
 !.env.example
 
-# banco: contém o histórico de quem sincronizou, além do token do AniList
+# banco: contém o histórico de quem sincronizou
 *.db
 *.db-journal
 *.db-wal
 *.db-shm
 *.sqlite3
 
-# dados exportados das APIs (histórico e watchlist pessoais)
+# dados exportados da API (histórico pessoal)
 crunchyroll.json
-anilist_map.json
-anilist_cache.json
-
-# catálogo local do AniList (62 MB, baixado com `make db`)
-.cache/
 
 # python
 .venv/
@@ -32,3 +27,6 @@ dist/
 .vscode/
 .idea/
 .DS_Store
+
+# catálogo antigo do AniList, sem uso desde o ADR 0001 (pode apagar)
+.cache/

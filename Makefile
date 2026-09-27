@@ -13,15 +13,9 @@ serve:
 	cd $(BACKEND) && $(PY) -m anime_tracker serve
 
 sync:
-	cd $(BACKEND) && $(PY) -m anime_tracker sync
+	cd $(BACKEND) && $(PY) -m anime_tracker crunchyroll $(ARGS)
 
-match:
-	cd $(BACKEND) && $(PY) -m anime_tracker match $(ARGS)
+novidades:
+	cd $(BACKEND) && $(PY) -m anime_tracker novidades
 
-mal:
-	cd $(BACKEND) && $(PY) -m anime_tracker mal $(ARGS)
-
-export:
-	cd $(BACKEND) && $(PY) -m anime_tracker export $(ARGS)
-
-.PHONY: test serve sync match mal export
+.PHONY: test serve sync novidades

@@ -1,46 +1,28 @@
 import { Component, OnDestroy, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { Api, Correcao, ItemBiblioteca, Provider, Stats } from './api';
-
-type Tela = 'inicio' | 'biblioteca' | 'pendentes';
+import { Api, Novidade, Tarefa } from './api';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule],
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })
 export class App implements OnDestroy {
   private api = inject(Api);
 
-  tela = signal<Tela>('inicio');
-  stats = signal<Stats | null>(null);
-  biblioteca = signal<ItemBiblioteca[]>([]);
-  pendentes = signal<Correcao[]>([]);
-  busca = signal('');
-  carregando = signal(false);
+  novidades = signal<Novidade[]>([]);
+  carregando = signal(true);
   erro = signal<string | null>(null);
-
-  /** Provedor escolhido nesta sessão de sync; some o botão do outro. */
-  provedorAtivo = signal<Provider | null>(null);
-  rodando = signal(false);
-  etapa = signal('');
-  progresso = signal({ feito: 0, total: 0 });
-  ultimoResultado = signal<Record<string, any> | null>(null);
+  tarefa = signal<Tarefa | null>(null);
 
   private timer?: ReturnType<typeof setInterval>;
 
   constructor() {
-    this.recarregarStats();
-    // se uma tarefa já estiver rodando (recarreguei a página no meio), reengata
+    this.carregar();
+    // se um sync já estiver rodando (recarreguei a página no meio), reengata
     this.api.tarefa().subscribe((t) => {
-      if (t.rodando) {
-        this.rodando.set(true);
-        this.provedorAtivo.set(this.provedorDe(t.tipo));
-        this.acompanhar();
-      }
+      this.tarefa.set(t);
+      if (t.rodando) this.acompanhar();
     });
   }
 
@@ -48,73 +30,32 @@ export class App implements OnDestroy {
     clearInterval(this.timer);
   }
 
-  private provedorDe(tipo: string | null): Provider | null {
-    return tipo === 'anilist' || tipo === 'mal' ? tipo : null;
-  }
-
-  rotuloProvedor(p: Provider): string {
-    return p === 'mal' ? 'MyAnimeList' : 'AniList';
-  }
-
-  /** Botão do outro provedor some enquanto um sync está escolhido/rodando. */
-  mostraProvedor(p: Provider): boolean {
-    const ativo = this.provedorAtivo();
-    return ativo === null || ativo === p;
-  }
-
-  recarregarStats() {
-    this.api.stats().subscribe({
-      next: (s) => this.stats.set(s),
-      error: () => this.erro.set('não consegui falar com o servidor'),
-    });
-  }
-
-  abrirBiblioteca() {
-    this.tela.set('biblioteca');
+  carregar() {
     this.carregando.set(true);
-    this.api.biblioteca(this.busca()).subscribe({
-      next: (itens) => {
-        this.biblioteca.set(itens);
+    this.api.novidades().subscribe({
+      next: (lista) => {
+        this.novidades.set(lista);
         this.carregando.set(false);
       },
-      error: (e) => {
-        this.erro.set(`falha ao carregar: ${e.message}`);
+      error: () => {
+        this.erro.set('não consegui falar com o servidor');
         this.carregando.set(false);
       },
     });
   }
 
-  voltar() {
-    this.tela.set('inicio');
+  sincronizar(force = false) {
     this.erro.set(null);
-    this.recarregarStats();
-  }
-
-  baixarCrunchyroll() {
-    this.disparar(() => this.api.baixarCrunchyroll(false), null);
-  }
-
-  sincronizar(provider: Provider) {
-    this.provedorAtivo.set(provider);
-    this.disparar(() => this.api.sincronizarProvedor(provider), provider);
-  }
-
-  private disparar(chamada: () => any, provider: Provider | null) {
-    this.erro.set(null);
-    this.rodando.set(true);
-    this.ultimoResultado.set(null);
-    chamada().subscribe({
+    this.api.baixarCrunchyroll(force).subscribe({
       next: () => this.acompanhar(),
-      error: (e: any) => {
+      error: (e) => {
         const corpo = e?.error ?? {};
         if (e?.status === 429 && confirm(
-          `Sincronizado há pouco (libera em ${corpo.minutos_ate_liberar} min). Baixar mesmo assim?`)) {
-          this.api.baixarCrunchyroll(true).subscribe(() => this.acompanhar());
+          `Sincronizado há pouco (libera em ${corpo.minutos_ate_liberar} min). Sincronizar mesmo assim?`)) {
+          this.sincronizar(true);
           return;
         }
         this.erro.set(corpo.erro ?? `falha ao iniciar (${e?.status})`);
-        this.rodando.set(false);
-        if (provider) this.provedorAtivo.set(null);
       },
     });
   }
@@ -123,61 +64,21 @@ export class App implements OnDestroy {
     clearInterval(this.timer);
     this.timer = setInterval(() => {
       this.api.tarefa().subscribe((t) => {
-        this.etapa.set(t.etapa);
-        this.progresso.set({ feito: t.feito, total: t.total });
+        this.tarefa.set(t);
         if (t.rodando) return;
-
         clearInterval(this.timer);
-        this.rodando.set(false);
-        this.etapa.set('');
         if (t.erro) this.erro.set(t.erro);
-        this.ultimoResultado.set(t.resultado);
-        this.recarregarStats();
-
-        // ao fim do sync, mostra só o que ficou pendente de match
-        if (!t.erro && this.provedorDe(t.tipo)) this.abrirPendentes();
+        this.carregar();
       });
     }, 1000);
   }
 
-  abrirPendentes() {
-    this.tela.set('pendentes');
-    this.carregando.set(true);
-    this.api.pendentes(this.busca()).subscribe({
-      next: (itens) => {
-        this.pendentes.set(itens);
-        this.carregando.set(false);
-      },
-      error: () => this.carregando.set(false),
-    });
-  }
-
-  /** 5. vincula o id digitado ao anime e tira da fila. */
-  vincular(item: Correcao, provider: Provider, idDigitado: string) {
-    const id = Number(idDigitado);
-    if (!id) {
-      this.erro.set('digite o id do provedor');
-      return;
-    }
-    this.api.vincular(item.season_id, provider, id).subscribe({
-      next: () => this.tirarDaFila(item),
-      error: (e) => this.erro.set(e?.error?.erro ?? 'não foi possível vincular'),
-    });
-  }
-
-  dispensar(item: Correcao) {
-    this.api.dispensar(item.season_id).subscribe({
-      next: () => this.tirarDaFila(item),
-      error: (e) => this.erro.set(e?.error?.erro ?? 'não foi possível dispensar'),
-    });
-  }
-
-  private tirarDaFila(item: Correcao) {
-    this.pendentes.update((lista) => lista.filter((x) => x.season_id !== item.season_id));
-    this.recarregarStats();
-  }
-
-  temVinculo(item: ItemBiblioteca, p: Provider): boolean {
-    return item.providers.split(',').includes(p);
+  /** "há 3 horas": o que importa é se a lista ainda está viva. */
+  ha(iso: string | null): string {
+    if (!iso) return 'nunca';
+    const horas = Math.floor((Date.now() - new Date(iso).getTime()) / 3_600_000);
+    if (horas < 1) return 'há menos de 1 hora';
+    if (horas < 48) return `há ${horas} hora${horas > 1 ? 's' : ''}`;
+    return `há ${Math.floor(horas / 24)} dias`;
   }
 }

@@ -1,11 +1,8 @@
 """CLI do anime-tracker — as mesmas features da API, sem interface.
 
-    python -m anime_tracker serve                # sobe o frontend e a API
-    python -m anime_tracker crunchyroll          # 1. busca dados da Crunchyroll
-    python -m anime_tracker match mal|anilist    # 2. busca no provedor e casa
-    python -m anime_tracker library              # 3. matches resolvidos
-    python -m anime_tracker pending [provider]   # 4. pendentes de match
-    python -m anime_tracker link <season_id> <provider> <id>   # 5. vincula
+    python -m anime_tracker serve         # sobe o frontend e a API
+    python -m anime_tracker crunchyroll   # busca histórico e temporadas (é o que o cron roda)
+    python -m anime_tracker novidades     # lista o que saiu dos animes iniciados
 """
 
 import argparse
@@ -13,8 +10,7 @@ import logging
 import os
 import sys
 
-from . import db, sync
-from .anilist import AniListError
+from . import db, novidades, sync
 from .config import load_env
 from .crunchyroll import Crunchyroll, CrunchyrollError
 
@@ -32,10 +28,10 @@ def cmd_crunchyroll(args, conn):
     etp_rt = os.environ.get("CR_ETP_RT")
     if not etp_rt:
         sys.exit("defina CR_ETP_RT no .env")
-    cr = Crunchyroll().login(etp_rt)
     try:
-        r = sync.run(cr, conn, force=args.force, ttl_horas=args.ttl,
-                     progresso=avisar, matcher=None)
+        with sync.registrando_erro(conn):
+            cr = Crunchyroll().login(etp_rt)
+            r = sync.run(cr, conn, force=args.force, ttl_horas=args.ttl, progresso=avisar)
     except sync.SyncBloqueado as e:
         sys.exit(f"{e}. Use --force para ignorar o intervalo.")
     limpar_linha()
@@ -43,39 +39,15 @@ def cmd_crunchyroll(args, conn):
           f"{r['temporadas']} temporadas atualizadas")
 
 
-def cmd_match(args, conn):
-    r = sync.rodar_match(conn, todas=args.todas, filtro=args.filtro,
-                         provider=args.provider, progresso=avisar)
-    limpar_linha()
-    if r["fonte_match"] is None:
-        sys.exit("sem fonte de match: API fora do ar e o catálogo local falhou")
-    print(f"{r['matches']} temporadas casadas em {r['alvos']} séries "
-          f"(fonte: {r['fonte_match']})")
-    print(f"{len(db.pendentes(conn))} pendente(s) de match")
-
-
-def cmd_library(args, conn):
-    linhas = db.biblioteca(conn)
-    for r in linhas:
-        print(f"{r['series_title']} T{r['season_number']} [{r['providers']}] "
-              f"-> {r['anilist_title'] or r['mal_title']}")
-    print(f"\n{len(linhas)} temporada(s) na biblioteca")
-
-
-def cmd_pending(args, conn):
-    linhas = db.pendentes(conn)
-    for r in linhas:
-        alvo = r["anilist_title"] or r["mal_title"] or "SEM CORRESPONDÊNCIA"
-        dup = f" [mesma obra da T{r['duplicate_of']}]" if r["duplicate_of"] else ""
-        print(f"{r['season_id']}  conf={r['confidence']:.2f}")
-        print(f"    {r['series_title']} T{r['season_number']} -> {alvo}{dup}")
-    print(f"\n{len(linhas)} pendente(s)")
-
-
-def cmd_link(args, conn):
-    n = db.vincular(conn, args.season_id, args.provider, args.provider_id)
-    print(f"{args.season_id} -> {args.provider} {args.provider_id}" if n
-          else "season_id não encontrado")
+def cmd_novidades(args, conn):
+    animes = novidades.lista(conn)
+    for a in animes:
+        partes = [f"Temporada nova: {t['title']} ({t['episodes']} eps)" for t in a["new_seasons"]]
+        if a["continuation"]:
+            c = a["continuation"]
+            partes.append(f"Continuação: {c['episodes']} eps novos em {c['title']}")
+        print(f"{a['title']} — {' · '.join(partes)}")
+    print(f"\n{len(animes)} anime(s) com novidade")
 
 
 def cmd_serve(args, conn):
@@ -90,23 +62,11 @@ def main(argv=None):
     parser.add_argument("--db", default=None, help="caminho do sqlite (padrão: ANIME_TRACKER_DB)")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    p = sub.add_parser("crunchyroll", help="1. busca watchlist, histórico e temporadas")
+    p = sub.add_parser("crunchyroll", help="busca histórico, temporadas e episódios")
     p.add_argument("--force", action="store_true", help="ignora o intervalo mínimo")
     p.add_argument("--ttl", type=int, default=sync.TTL_HORAS)
 
-    p = sub.add_parser("match", help="2. busca no provedor e casa com a nossa base")
-    p.add_argument("provider", choices=db.PROVIDERS)
-    p.add_argument("filtro", nargs="?", default="", help="filtra por trecho do título")
-    p.add_argument("--todas", action="store_true", help="recasa o que já tem vínculo")
-
-    sub.add_parser("library", help="3. matches resolvidos")
-
-    sub.add_parser("pending", help="4. pendentes de match")
-
-    p = sub.add_parser("link", help="5. vincula um id do provedor à temporada")
-    p.add_argument("season_id")
-    p.add_argument("provider", choices=db.PROVIDERS)
-    p.add_argument("provider_id", type=int)
+    sub.add_parser("novidades", help="temporadas novas e continuações dos animes iniciados")
 
     p = sub.add_parser("serve", help="sobe o frontend e a API")
     p.add_argument("--host", default="127.0.0.1")
@@ -118,10 +78,8 @@ def main(argv=None):
     load_env()
     conn = db.connect(args.db)
     try:
-        {"crunchyroll": cmd_crunchyroll, "match": cmd_match, "library": cmd_library,
-         "pending": cmd_pending, "link": cmd_link, "serve": cmd_serve}[args.cmd](args, conn)
-    except AniListError as e:
-        sys.exit(f"\nAniList indisponível: {e}")
+        {"crunchyroll": cmd_crunchyroll, "novidades": cmd_novidades,
+         "serve": cmd_serve}[args.cmd](args, conn)
     except CrunchyrollError as e:
         sys.exit(f"\nCrunchyroll: {e}\nSe for erro de auth, o cookie etp_rt expirou.")
     except KeyboardInterrupt:
