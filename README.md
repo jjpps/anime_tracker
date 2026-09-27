@@ -18,7 +18,7 @@ backend/anime_tracker/
   db.py            schema e acesso ao SQLite
   cli.py           comandos
   server.py        Flask: frontend e API
-frontend/web/      Angular: a lista de novidades
+frontend/web/      Angular: novidades, largados e o mega menu
 ```
 
 ## Uso

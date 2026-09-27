@@ -94,12 +94,31 @@ def create_app(db_path=None):
     @app.get("/api/stats")
     def stats():
         with conn() as c:
-            return jsonify(db.stats(c))
+            return jsonify({**db.stats(c), "novidades": len(novidades.lista(c))})
 
     @app.get("/api/novidades")
     def lista_novidades():
         with conn() as c:
             return jsonify(novidades.lista(c))
+
+    @app.get("/api/largados")
+    def lista_largados():
+        with conn() as c:
+            return jsonify(db.largados(c))
+
+    @app.put("/api/largados/<series_id>")
+    def largar(series_id):
+        """Parar de acompanhar. PUT porque marcar duas vezes dá no mesmo."""
+        with conn() as c:
+            if not db.largar(c, series_id):
+                return jsonify({"erro": "série não encontrada"}), 404
+        return jsonify({"series_id": series_id, "largado": True})
+
+    @app.delete("/api/largados/<series_id>")
+    def voltar_a_acompanhar(series_id):
+        with conn() as c:
+            db.voltar_a_acompanhar(c, series_id)
+        return jsonify({"series_id": series_id, "largado": False})
 
     @app.get("/api/task")
     def task_status():

@@ -26,7 +26,7 @@ def e_extra(numero, titulos):
 
 
 def lista(conn):
-    """Animes iniciados com pelo menos uma novidade, na ordem da tela."""
+    """Animes iniciados e não largados com pelo menos uma novidade, na ordem da tela."""
     temporadas = defaultdict(dict)  # series_id -> número -> {titulos, episodios}
     for r in conn.execute("SELECT series_id, season_number, title, total_episodes FROM seasons"):
         t = temporadas[r["series_id"]].setdefault(r["season_number"], {"titulos": [], "episodios": 0})
@@ -53,8 +53,12 @@ def lista(conn):
     ):
         lancado[(r["series_id"], r["season_number"])].append((r["episode_number"], r["quando"]))
 
+    largados = {r[0] for r in conn.execute("SELECT series_id FROM dropped")}
+
     saida = []
     for series_id, vistos in ultimo_ep.items():
+        if series_id in largados:
+            continue
         principais = {n: t for n, t in temporadas.get(series_id, {}).items()
                       if not e_extra(n, t["titulos"])}
         tocadas = [n for n in vistos if n in principais]

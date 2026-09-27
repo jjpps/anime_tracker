@@ -25,6 +25,10 @@ Algo que está no catálogo da Crunchyroll para assistir agora. Anunciado ou em 
 
 **Anime iniciado**:
 Um anime com pelo menos um episódio no meu histórico da Crunchyroll. Estar ou não na watchlist não importa.
+
+**Anime largado**:
+Um anime iniciado que marquei para parar de acompanhar. Não entra na lista de novidades até eu voltar a acompanhar. Tirar da watchlist da Crunchyroll não larga um anime.
+_Avoid_: dropado, removido, arquivado, não acompanhado
 _Avoid_: acompanhado, em andamento
 
 **Temporada tocada**:
@@ -48,15 +52,10 @@ _Avoid_: lançamento, pendência
 ### Lista
 
 **Lista de novidades**:
-Os animes iniciados que têm pelo menos uma novidade. Vêm primeiro os que têm mais temporadas tocadas; no empate, o assistido mais recentemente.
+Os animes iniciados, e não largados, que têm pelo menos uma novidade. Vêm primeiro os que têm mais temporadas tocadas; no empate, o assistido mais recentemente.
+
+**Lista de largados**:
+Todos os animes largados, com ou sem novidade, para eu poder voltar a acompanhar.
 
 **Último sync**:
 O momento da última leitura bem-sucedida da Crunchyroll, junto com o erro da última tentativa que falhou. Mostra que a lista ainda está viva.
-
-## Adiado
-
-**Anime largado**:
-Um anime que marquei para parar de acompanhar. Ele sai da lista de novidades até eu desfazer a marca, e a marca vale para sempre. Tirar da watchlist da Crunchyroll não larga um anime.
-_Avoid_: dropado, removido, arquivado
-
-Quando entrar: um botão "Parar de acompanhar" em cada linha da lista, e uma seção "Largados" recolhida no fim da tela, com "Voltar a acompanhar". Sem isso, um anime abandonado na temporada 1 aparece sempre que sai uma temporada nova. Fica para depois porque a lista ainda não existe e o ruído ainda não foi medido.

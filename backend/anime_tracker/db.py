@@ -1,4 +1,4 @@
-"""Persistência em SQLite. Sem ORM: sqlite3 é stdlib e o schema tem 5 tabelas."""
+"""Persistência em SQLite. Sem ORM: sqlite3 é stdlib e o schema tem 6 tabelas."""
 
 import os
 import sqlite3
@@ -64,6 +64,12 @@ CREATE TABLE IF NOT EXISTS watch_history (
     fully_watched   INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_history_series ON watch_history(series_id, season_number);
+
+-- anime largado: a marca é nossa, não da CR, e sobrevive a qualquer sync
+CREATE TABLE IF NOT EXISTS dropped (
+    series_id   TEXT PRIMARY KEY REFERENCES series(series_id) ON DELETE CASCADE,
+    dropped_at  TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS settings (
     key    TEXT PRIMARY KEY,
@@ -167,11 +173,37 @@ def save_history(conn, episodes):
     conn.commit()
 
 
+def largar(conn, series_id):
+    """Marca o anime como largado. False se a série não existe."""
+    if not conn.execute("SELECT 1 FROM series WHERE series_id = ?", [series_id]).fetchone():
+        return False
+    # marcar de novo não mexe na data: a lista ordena por quando larguei
+    conn.execute("INSERT OR IGNORE INTO dropped (series_id, dropped_at) VALUES (?, ?)",
+                 [series_id, agora()])
+    conn.commit()
+    return True
+
+
+def voltar_a_acompanhar(conn, series_id):
+    conn.execute("DELETE FROM dropped WHERE series_id = ?", [series_id])
+    conn.commit()
+
+
+def largados(conn):
+    """Lista de largados, o mais recente primeiro."""
+    return [dict(r) for r in conn.execute(
+        """SELECT s.series_id, s.title, s.poster, d.dropped_at
+             FROM dropped d JOIN series s USING (series_id)
+            ORDER BY d.dropped_at DESC, s.title"""
+    )]
+
+
 def stats(conn):
     return dict(conn.execute(
         """SELECT (SELECT COUNT(*) FROM series)        AS series,
                   (SELECT COUNT(*) FROM seasons)       AS seasons,
-                  (SELECT COUNT(*) FROM watch_history) AS episodes"""
+                  (SELECT COUNT(*) FROM watch_history) AS episodes,
+                  (SELECT COUNT(*) FROM dropped)       AS dropped"""
     ).fetchone())
 
 

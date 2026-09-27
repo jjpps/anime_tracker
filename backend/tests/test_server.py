@@ -41,6 +41,7 @@ def test_stats():
     cli, _ = app_com_dados()
     s = cli.get("/api/stats").get_json()
     assert (s["series"], s["seasons"], s["episodes"]) == (1, 2, 1)
+    assert (s["novidades"], s["dropped"]) == (1, 0)
 
 
 def test_novidades():
@@ -48,6 +49,26 @@ def test_novidades():
     [a] = cli.get("/api/novidades").get_json()
     assert a["title"] == "Mushoku Tensei"
     assert a["new_seasons"] == [{"title": "Season 2", "episodes": 12}]
+
+
+def test_parar_e_voltar_a_acompanhar():
+    cli, _ = app_com_dados()
+    assert cli.put("/api/largados/G1").status_code == 200
+    assert cli.put("/api/largados/G1").status_code == 200, "marcar de novo não é erro"
+    assert cli.get("/api/novidades").get_json() == []
+    [largado] = cli.get("/api/largados").get_json()
+    assert largado["title"] == "Mushoku Tensei" and largado["dropped_at"]
+    s = cli.get("/api/stats").get_json()
+    assert (s["novidades"], s["dropped"]) == (0, 1)
+
+    assert cli.delete("/api/largados/G1").status_code == 200
+    assert len(cli.get("/api/novidades").get_json()) == 1
+    assert cli.get("/api/largados").get_json() == []
+
+
+def test_largar_serie_inexistente():
+    cli, _ = app_com_dados()
+    assert cli.put("/api/largados/NAO_EXISTE").status_code == 404
 
 
 def test_status_da_tarefa_traz_o_erro_do_sync():

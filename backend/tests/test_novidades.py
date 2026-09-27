@@ -53,6 +53,17 @@ def test_temporada_nova_depois_da_ultima_tocada():
     assert a["continuation"] is None
 
 
+def test_anime_largado_sai_da_lista_e_volta():
+    conn = banco("X", "X", [temporada("a", 1, "S1", 12), temporada("b", 2, "S2", 12)],
+                 [(1, 12, SESSAO)])
+    db.largar(conn, "X")
+    assert novidades.lista(conn) == []
+    assert [a["series_id"] for a in db.largados(conn)] == ["X"]
+
+    db.voltar_a_acompanhar(conn, "X")
+    assert len(novidades.lista(conn)) == 1 and db.largados(conn) == []
+
+
 def test_temporadas_anteriores_contam_como_vistas():
     conn = banco("X", "X", [temporada("a", 1, "S1", 12), temporada("b", 2, "S2", 12)],
                  [(2, 12, SESSAO)])

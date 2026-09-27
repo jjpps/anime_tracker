@@ -3,31 +3,26 @@
   min-height: 100vh;
 }
 
-.anime {
-  transition: transform 0.15s, box-shadow 0.15s;
-
-  &:hover,
-  &:focus-visible {
-    transform: translateY(-3px);
-    box-shadow: 0 6px 18px rgb(0 0 0 / 0.4);
-  }
+// o painel desce da navbar e cobre a largura toda; o fundo fecha ao clicar fora
+.mega {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 1031;
 }
 
-// pôster da CR é 2:3; o placeholder ocupa o mesmo espaço para a grade não pular
-.poster {
-  aspect-ratio: 2 / 3;
-  object-fit: cover;
+.mega-fundo {
+  position: fixed;
+  inset: 0;
+  z-index: 1030;
+  background: rgb(0 0 0 / 0.35);
 }
 
-.sem-poster {
-  display: grid;
-  place-items: center;
-  font-size: 3rem;
-  font-weight: 600;
+.mega-titulo {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--bs-secondary-color);
-  background: var(--bs-tertiary-bg);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .anime { transition: none; }
+  margin-bottom: 0.75rem;
 }

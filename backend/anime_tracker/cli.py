@@ -1,4 +1,4 @@
-"""CLI do anime-tracker — as mesmas features da API, sem interface.
+"""CLI do anime-tracker: sync e leitura pelo terminal (largar/voltar é pela UI).
 
     python -m anime_tracker serve         # sobe o frontend e a API
     python -m anime_tracker crunchyroll   # busca histórico e temporadas (é o que o cron roda)
