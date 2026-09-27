@@ -41,7 +41,7 @@ def lista(conn):
         ultimo_ep[r["series_id"]][r["season_number"]] = r["ep"]
 
     sessao = dict(conn.execute("SELECT series_id, MAX(watched_at) FROM watch_history GROUP BY 1"))
-    nomes = dict(conn.execute("SELECT series_id, title FROM series"))
+    series = {r["series_id"]: r for r in conn.execute("SELECT series_id, title, poster FROM series")}
 
     # quando cada número de episódio chegou pela primeira vez, em qualquer
     # versão de áudio: a dublagem de algo que eu já tinha deixado de lado não
@@ -74,7 +74,10 @@ def lista(conn):
                            "episodes": len(depois)}
 
         if novas or continuacao:
-            saida.append({"series_id": series_id, "title": nomes.get(series_id) or series_id,
+            serie = series.get(series_id)
+            saida.append({"series_id": series_id,
+                          "title": (serie and serie["title"]) or series_id,
+                          "poster": serie and serie["poster"],
                           "seasons_watched": len(tocadas), "last_watched_at": ultima_sessao,
                           "new_seasons": novas, "continuation": continuacao})
 

@@ -19,6 +19,7 @@ import contextlib
 from datetime import datetime, timedelta, timezone
 
 from . import db
+from .crunchyroll import poster
 
 TTL_HORAS = 6
 # uma folga na marca d'água custa uma página e cobre desordem na borda
@@ -142,6 +143,7 @@ def run(cr, conn, force=False, ttl_horas=TTL_HORAS, progresso=None):
             "availability": meta.get("availability_status", "unknown"),
             "total_episodes": int(meta.get("episode_count") or 0),
             "total_seasons": int(meta.get("season_count") or 0),
+            "poster": poster(obj),
         }
         series.append(atual)
         if atual["availability"] == "available" and precisa_temporadas(atual, guardado.get(series_id)):

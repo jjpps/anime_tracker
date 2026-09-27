@@ -65,6 +65,17 @@ def cr_padrao(**kw):
     return CRFalso(**base)
 
 
+def test_poster_e_gravado_e_sobrevive_a_saida_do_catalogo():
+    conn = db.connect(":memory:")
+    obj = {**objeto("Serie A", 12, 1),
+           "images": {"poster_tall": [[{"width": 480, "source": "https://img/a.jpg"}]]}}
+    sync.run(cr_padrao(objetos={"A": obj}), conn, force=True)
+    assert conn.execute("SELECT poster FROM series").fetchone()[0] == "https://img/a.jpg"
+
+    sync.run(cr_padrao(objetos={}), conn, force=True)  # cms não resolveu a série
+    assert conn.execute("SELECT poster FROM series").fetchone()[0] == "https://img/a.jpg"
+
+
 def test_primeiro_sync_e_completo():
     conn = db.connect(":memory:")
     cr = cr_padrao()

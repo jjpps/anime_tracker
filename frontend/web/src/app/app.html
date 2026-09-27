@@ -1,4 +1,4 @@
-<nav class="navbar navbar-dark bg-dark border-bottom border-secondary">
+<nav class="navbar bg-body-tertiary border-bottom">
   <div class="container-fluid gap-2">
     <span class="navbar-brand mb-0 h1">anime tracker</span>
     @if (tarefa(); as t) {
@@ -10,7 +10,7 @@
   </div>
 </nav>
 
-<main class="container py-4" style="max-width: 900px">
+<main class="container py-4">
   @if (tarefa()?.erro_sync; as e) {
     <div class="alert alert-warning">
       <strong>O último sync falhou.</strong> A lista pode estar desatualizada.
@@ -45,23 +45,34 @@
   } @else if (!novidades().length) {
     <p class="text-secondary">Nada novo nos animes que você começou.</p>
   } @else {
-    <ul class="list-group">
+    <div class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-xl-5 g-3">
       @for (a of novidades(); track a.series_id) {
-        <li class="list-group-item bg-dark text-light border-secondary">
-          <a class="fw-semibold link-light" target="_blank" rel="noopener"
-             [href]="'https://www.crunchyroll.com/series/' + a.series_id">{{ a.title }}</a>
-          <div class="small mt-1">
-            @for (t of a.new_seasons; track t.title) {
-              <span class="badge text-bg-primary me-1">Temporada nova</span>
-              <span class="me-3">{{ t.title }} ({{ t.episodes }} eps)</span>
+        <div class="col">
+          <a class="card h-100 text-decoration-none anime" target="_blank" rel="noopener"
+             [href]="'https://www.crunchyroll.com/series/' + a.series_id">
+            @if (a.poster) {
+              <img class="card-img-top poster" [src]="a.poster" [alt]="a.title" loading="lazy">
+            } @else {
+              <div class="card-img-top poster sem-poster" aria-hidden="true">{{ a.title[0] }}</div>
             }
-            @if (a.continuation; as c) {
-              <span class="badge text-bg-info me-1">Continuação</span>
-              <span>{{ c.episodes }} eps novos em {{ c.title }}</span>
-            }
-          </div>
-        </li>
+            <div class="card-body p-2">
+              <h2 class="h6 card-title mb-2">{{ a.title }}</h2>
+              @for (t of a.new_seasons; track t.title) {
+                <div class="small mb-1">
+                  <span class="badge text-bg-primary">Temporada nova</span>
+                  <div class="text-body-secondary">{{ t.title }} · {{ t.episodes }} eps</div>
+                </div>
+              }
+              @if (a.continuation; as c) {
+                <div class="small">
+                  <span class="badge text-bg-info">Continuação</span>
+                  <div class="text-body-secondary">{{ c.episodes }} eps novos em {{ c.title }}</div>
+                </div>
+              }
+            </div>
+          </a>
+        </div>
       }
-    </ul>
+    </div>
   }
 </main>

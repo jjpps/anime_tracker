@@ -1,6 +1,33 @@
 :host {
   display: block;
   min-height: 100vh;
-  background: #14161a;
-  color: #e6e8ec;
+}
+
+.anime {
+  transition: transform 0.15s, box-shadow 0.15s;
+
+  &:hover,
+  &:focus-visible {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 18px rgb(0 0 0 / 0.4);
+  }
+}
+
+// pôster da CR é 2:3; o placeholder ocupa o mesmo espaço para a grade não pular
+.poster {
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+}
+
+.sem-poster {
+  display: grid;
+  place-items: center;
+  font-size: 3rem;
+  font-weight: 600;
+  color: var(--bs-secondary-color);
+  background: var(--bs-tertiary-bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anime { transition: none; }
 }

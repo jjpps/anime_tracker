@@ -196,6 +196,18 @@ def parse_episode(e: dict) -> dict:
     }
 
 
+def poster(obj: dict, largura=360):
+    """URL do pôster vertical: o menor que ainda cobre `largura`, ou o maior.
+
+    A CR manda `images.poster_tall` como lista de listas de tamanhos."""
+    tamanhos = [t for grupo in (obj.get("images") or {}).get("poster_tall") or [] for t in grupo
+                if t.get("source")]
+    if not tamanhos:
+        return None
+    tamanhos.sort(key=lambda t: t.get("width") or 0)
+    return next((t for t in tamanhos if (t.get("width") or 0) >= largura), tamanhos[-1])["source"]
+
+
 def _num(value, cast, default):
     try:
         return cast(value) if value is not None else default
@@ -247,5 +259,12 @@ if __name__ == "__main__":
                         "premium_available_date": "2026-04-02T15:00:00Z"})
     assert ep == {"episode_number": 25.0, "released_at": "2026-04-02T15:00:00Z"}
     assert parse_episode({"episode_number": None})["episode_number"] is None
+
+    capa = {"images": {"poster_tall": [[
+        {"width": 60, "source": "p60"}, {"width": 480, "source": "p480"},
+        {"width": 1560, "source": "p1560"}]]}}
+    assert poster(capa) == "p480"
+    assert poster(capa, largura=9999) == "p1560"
+    assert poster({}) is None and poster({"images": {"poster_tall": [[]]}}) is None
 
     print("ok")

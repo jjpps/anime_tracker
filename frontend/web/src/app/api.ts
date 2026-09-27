@@ -6,6 +6,8 @@ import { Observable } from 'rxjs';
 export interface Novidade {
   series_id: string;
   title: string;
+  /** Pôster vertical da CR; null até o próximo sync ou se a CR não tiver imagem. */
+  poster: string | null;
   seasons_watched: number;
   last_watched_at: string | null;
   new_seasons: { title: string; episodes: number }[];

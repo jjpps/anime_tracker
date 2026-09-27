@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS series (
     availability    TEXT,
     total_episodes  INTEGER,
     total_seasons   INTEGER,
+    poster          TEXT,
     synced_at       TEXT NOT NULL
 );
 
@@ -83,6 +84,7 @@ def agora():
 # existente, então banco antigo precisa do ALTER
 COLUNAS_NOVAS = [
     ("watch_history", "series_title", "TEXT"),
+    ("series", "poster", "TEXT"),
 ]
 
 
@@ -109,14 +111,18 @@ def connect(path=None):
 def save_series(conn, series):
     conn.executemany(
         """INSERT INTO series
-             (series_id, title, availability, total_episodes, total_seasons, synced_at)
+             (series_id, title, availability, total_episodes, total_seasons, poster,
+              synced_at)
            VALUES (:series_id, :series_title, :availability, :total_episodes,
-                   :total_seasons, :synced_at)
+                   :total_seasons, :poster, :synced_at)
            ON CONFLICT(series_id) DO UPDATE SET
              title=excluded.title, availability=excluded.availability,
              total_episodes=excluded.total_episodes,
-             total_seasons=excluded.total_seasons, synced_at=excluded.synced_at""",
-        [{**s, "synced_at": agora()} for s in series],
+             total_seasons=excluded.total_seasons,
+             -- série que saiu do catálogo volta sem imagem; a antiga ainda serve
+             poster=COALESCE(excluded.poster, series.poster),
+             synced_at=excluded.synced_at""",
+        [{"poster": None, **s, "synced_at": agora()} for s in series],
     )
     conn.commit()
 
