@@ -1,0 +1,32 @@
+# credenciais — o etp_rt da Crunchyroll
+.env
+.env.*
+!.env.example
+
+# banco: contém o histórico de quem sincronizou
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite3
+
+# dados exportados da API (histórico pessoal)
+crunchyroll.json
+
+# python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# frontend (quando tiver build)
+node_modules/
+dist/
+
+# editor e sistema
+.vscode/
+.idea/
+.DS_Store
+
+# catálogo antigo do AniList, sem uso desde o ADR 0001 (pode apagar)
+.cache/

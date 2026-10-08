@@ -1,0 +1,96 @@
+<nav class="navbar bg-body-tertiary border-bottom sticky-top">
+  <div class="container-fluid gap-2">
+    <a class="navbar-brand mb-0 h1" routerLink="/" (click)="fecharMenu()">anime tracker</a>
+    <span class="text-secondary small me-auto d-none d-sm-inline">
+      último sync: {{ ha(tarefa()?.ultimo_sync) }}
+    </span>
+    <button class="btn btn-outline-light btn-sm" type="button" (click)="alternarMenu()"
+            [attr.aria-expanded]="menuAberto()" aria-controls="mega-menu">
+      Menu <span aria-hidden="true">{{ menuAberto() ? '▴' : '▾' }}</span>
+    </button>
+  </div>
+
+  @if (menuAberto()) {
+    <div id="mega-menu" class="mega bg-body-tertiary border-bottom shadow">
+      <div class="container py-4">
+        <div class="row g-4">
+          <section class="col-12 col-md-7">
+            <h2 class="mega-titulo">Listas</h2>
+            <div class="list-group">
+              <a class="list-group-item list-group-item-action" routerLink="/"
+                 routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }"
+                 (click)="fecharMenu()">
+                <div class="d-flex justify-content-between align-items-center">
+                  <strong>Novidades</strong>
+                  <span class="badge text-bg-primary rounded-pill">{{ api.stats()?.novidades ?? '–' }}</span>
+                </div>
+                <div class="small opacity-75">Temporadas novas e continuações dos animes que você começou.</div>
+              </a>
+              <a class="list-group-item list-group-item-action" routerLink="/largados"
+                 routerLinkActive="active" (click)="fecharMenu()">
+                <div class="d-flex justify-content-between align-items-center">
+                  <strong>Parei de acompanhar</strong>
+                  <span class="badge text-bg-secondary rounded-pill">{{ api.stats()?.dropped ?? '–' }}</span>
+                </div>
+                <div class="small opacity-75">Animes fora das novidades. Dá para voltar a acompanhar.</div>
+              </a>
+            </div>
+          </section>
+
+          <section class="col-12 col-md-5">
+            <h2 class="mega-titulo">Crunchyroll</h2>
+            <p class="small mb-1">Último sync: <strong>{{ ha(tarefa()?.ultimo_sync) }}</strong></p>
+            @if (api.stats(); as s) {
+              <p class="small text-body-secondary mb-3">
+                {{ s.series }} animes · {{ s.episodes }} episódios no histórico
+              </p>
+            }
+            @if (tarefa()?.erro_sync) {
+              <p class="small text-warning mb-3">O último sync falhou. Veja o aviso na página.</p>
+            }
+            <div class="d-flex flex-wrap gap-2">
+              <button class="btn btn-primary btn-sm" type="button" (click)="sincronizar()"
+                      [disabled]="tarefa()?.rodando">
+                Sincronizar agora
+              </button>
+              <a class="btn btn-outline-secondary btn-sm" href="https://www.crunchyroll.com/history"
+                 target="_blank" rel="noopener">Histórico na CR</a>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+    <div class="mega-fundo" (click)="fecharMenu()" aria-hidden="true"></div>
+  }
+</nav>
+
+<main class="container py-4">
+  @if (tarefa()?.erro_sync; as e) {
+    <div class="alert alert-warning">
+      <strong>O último sync falhou.</strong> A lista pode estar desatualizada.
+      <div class="small mt-1 text-break">{{ e }}</div>
+      @if (e.includes('auth')) {
+        <div class="small mt-1">O cookie <code>etp_rt</code> do <code>.env</code> provavelmente expirou.</div>
+      }
+    </div>
+  }
+
+  @if (api.erro(); as e) {
+    <div class="alert alert-danger d-flex justify-content-between align-items-center">
+      <span>{{ e }}</span>
+      <button class="btn-close" aria-label="Fechar" (click)="api.erro.set(null)"></button>
+    </div>
+  }
+
+  @if (tarefa()?.rodando) {
+    <div class="alert alert-info d-flex align-items-center gap-3">
+      <div class="spinner-border spinner-border-sm" role="status"></div>
+      <span>{{ tarefa()?.etapa || 'iniciando' }}</span>
+      @if (tarefa()?.total) {
+        <span class="text-body-secondary">{{ tarefa()?.feito }}/{{ tarefa()?.total }}</span>
+      }
+    </div>
+  }
+
+  <router-outlet />
+</main>

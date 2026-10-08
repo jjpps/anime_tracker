@@ -1,0 +1,28 @@
+:host {
+  display: block;
+  min-height: 100vh;
+}
+
+// o painel desce da navbar e cobre a largura toda; o fundo fecha ao clicar fora
+.mega {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 1031;
+}
+
+.mega-fundo {
+  position: fixed;
+  inset: 0;
+  z-index: 1030;
+  background: rgb(0 0 0 / 0.35);
+}
+
+.mega-titulo {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+  margin-bottom: 0.75rem;
+}
