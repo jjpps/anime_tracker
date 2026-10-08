@@ -93,7 +93,9 @@ def estado_guardado(conn):
     linhas = conn.execute(
         """SELECT s.series_id, s.total_episodes, s.total_seasons,
                   EXISTS(SELECT 1 FROM seasons t JOIN episodes e USING (season_id)
-                          WHERE t.series_id = s.series_id) AS tem_episodios
+                          WHERE t.series_id = s.series_id
+                            -- gravado antes de guardarmos o id do episódio: rebusca
+                            AND e.episode_id IS NOT NULL) AS tem_episodios
              FROM series s"""
     ).fetchall()
     return {r["series_id"]: dict(r) for r in linhas}

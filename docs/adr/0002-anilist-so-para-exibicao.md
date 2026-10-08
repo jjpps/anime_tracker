@@ -1,0 +1,3 @@
+# AniList volta só para exibição, nunca para decidir Novidade
+
+O ADR 0001 tirou o match com AniList/MAL porque não alimentava o objetivo. A página de detalhe do anime quer sinopse, nota e gêneros, e isso só o AniList tem. Ele volta nesse papel e em nenhum outro: a CR continua sendo a única fonte de Temporada, Episódio pendente e Novidade. O match é uma busca automática pelo título, buscada sob demanda ao abrir o detalhe e guardada em cache; o `anilist_id` fica no banco para uma correção manual futura. Não há fila de revisão nem tela de correções, que foram o peso do código removido. Erro de match só estraga o enfeite, nunca a lista.

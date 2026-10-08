@@ -22,6 +22,34 @@ export interface Largado {
   dropped_at: string;
 }
 
+export interface EpisodioPendente {
+  number: number;
+  id: string | null;
+  title: string | null;
+}
+
+/** Detalhe de um anime: CR sempre, AniList quando respondeu (docs/adr/0002). */
+export interface AnimeDetalhe {
+  series_id: string;
+  title: string;
+  poster: string | null;
+  largado: boolean;
+  anilist: {
+    siteUrl: string;
+    description: string | null;
+    averageScore: number | null;
+    genres: string[];
+    status: string | null;
+    episodes: number | null;
+    seasonYear: number | null;
+    bannerImage: string | null;
+    title: { romaji: string | null; english: string | null };
+  } | null;
+  /** AniList fora do ar: diferente de "não achou", que vem com anilist null. */
+  anilist_erro: boolean;
+  pendentes: { title: string; episodes: EpisodioPendente[] }[];
+}
+
 export interface Stats {
   series: number;
   seasons: number;
@@ -63,6 +91,10 @@ export class Api {
 
   novidades(): Observable<Novidade[]> {
     return this.http.get<Novidade[]>('/api/novidades');
+  }
+
+  anime(seriesId: string): Observable<AnimeDetalhe> {
+    return this.http.get<AnimeDetalhe>(`/api/anime/${encodeURIComponent(seriesId)}`);
   }
 
   largados(): Observable<Largado[]> {

@@ -142,7 +142,7 @@ class Crunchyroll:
         return out
 
     def episodes(self, season_id, locale="en-US"):
-        """[{episode_number, released_at}] de uma temporada."""
+        """[{episode_id, title, episode_number, released_at}] de uma temporada."""
         data = self._get(f"/content/v2/cms/seasons/{season_id}/episodes",
                          params={"locale": locale}).get("data", [])
         return [ep for ep in map(parse_episode, data) if ep["episode_number"] is not None]
@@ -190,6 +190,8 @@ def parse_episode(e: dict) -> dict:
     """Data de chegada na CR, não a de exibição no Japão: anime antigo que
     entra no catálogo agora é novidade para quem assiste aqui."""
     return {
+        "episode_id": e.get("id"),
+        "title": e.get("title"),
         "episode_number": _num(e.get("episode_number"), float, None),
         "released_at": e.get("premium_available_date") or e.get("availability_starts")
                        or e.get("episode_air_date"),
@@ -257,7 +259,8 @@ if __name__ == "__main__":
 
     ep = parse_episode({"episode_number": 25, "episode_air_date": "2020-01-01T00:00:00Z",
                         "premium_available_date": "2026-04-02T15:00:00Z"})
-    assert ep == {"episode_number": 25.0, "released_at": "2026-04-02T15:00:00Z"}
+    assert ep == {"episode_id": None, "title": None, "episode_number": 25.0,
+                  "released_at": "2026-04-02T15:00:00Z"}
     assert parse_episode({"episode_number": None})["episode_number"] is None
 
     capa = {"images": {"poster_tall": [[

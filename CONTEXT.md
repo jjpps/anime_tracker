@@ -49,6 +49,10 @@ _Avoid_: episódio novo, parte 2, cour
 Uma temporada nova ou uma continuação.
 _Avoid_: lançamento, pendência
 
+**Episódio pendente**:
+Episódio disponível de uma Temporada que não tem registro de assistido por completo. Vale para qualquer Temporada do anime, inclusive as que pulei e buracos no meio de uma Temporada. Mais amplo que Continuação, e não entra na decisão de ser Novidade.
+_Avoid_: episódio novo, não visto
+
 ### Lista
 
 **Lista de novidades**:

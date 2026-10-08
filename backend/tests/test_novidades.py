@@ -145,6 +145,23 @@ def test_ordem_temporadas_tocadas_e_depois_recencia():
     assert [a["series_id"] for a in novidades.lista(conn)] == ["B", "C", "A"]
 
 
+def test_pendentes_so_temporadas_com_episodio_nao_visto():
+    """Temporada pulada e buraco no meio contam; dublado não duplica; extra e
+    episódio futuro ficam de fora."""
+    dub = temporada("a2", 1, "Show (Portuguese Dub)", 3)
+    dub["episodes"][0]["episode_id"] = "dub1"
+    conn = banco("P", "Show", [
+        temporada("a", 1, "Show", 3), dub,
+        temporada("b", 2, "Show 2", 2),
+        temporada("c", 3, "Show 3", 1),
+        temporada("f", 0, "Show Movie", 1),
+        temporada("g", 4, "Show 4", 1, quando="2999-01-01T00:00:00Z"),
+    ], [(1, 1, SESSAO), (1, 3, SESSAO), (3, 1, SESSAO)])
+    r = novidades.pendentes(conn, "P")
+    assert [(t["title"], [e["number"] for e in t["episodes"]]) for t in r] == [
+        ("Show", [2.0]), ("Show 2", [1.0, 2.0])]
+
+
 if __name__ == "__main__":
     for nome, fn in sorted(globals().items()):
         if nome.startswith("test_"):

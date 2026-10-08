@@ -77,8 +77,17 @@ CREATE TABLE IF NOT EXISTS settings (
     saved_at TEXT NOT NULL
 );
 
--- o match com AniList/MAL saiu (docs/adr/0001)
+-- o match com AniList/MAL saiu (docs/adr/0001) e voltou só para exibição (docs/adr/0002)
 DROP TABLE IF EXISTS matches;
+
+-- cache do detalhe; anilist_id NULL = buscado e não achou. Correção manual
+-- futura é gravar o anilist_id aqui
+CREATE TABLE IF NOT EXISTS anilist (
+    series_id   TEXT PRIMARY KEY REFERENCES series(series_id) ON DELETE CASCADE,
+    anilist_id  INTEGER,
+    data        TEXT,
+    fetched_at  TEXT NOT NULL
+);
 """
 
 
@@ -91,6 +100,8 @@ def agora():
 COLUNAS_NOVAS = [
     ("watch_history", "series_title", "TEXT"),
     ("series", "poster", "TEXT"),
+    ("episodes", "episode_id", "TEXT"),
+    ("episodes", "title", "TEXT"),
 ]
 
 
@@ -148,9 +159,11 @@ def save_seasons(conn, series_id, seasons):
     conn.executemany("DELETE FROM episodes WHERE season_id = ?",
                      [[s["season_id"]] for s in seasons])
     conn.executemany(
-        """INSERT OR REPLACE INTO episodes (season_id, episode_number, released_at)
-           VALUES (?, ?, ?)""",
-        [[s["season_id"], e["episode_number"], e["released_at"]]
+        """INSERT OR REPLACE INTO episodes
+             (season_id, episode_number, released_at, episode_id, title)
+           VALUES (?, ?, ?, ?, ?)""",
+        [[s["season_id"], e["episode_number"], e["released_at"],
+          e.get("episode_id"), e.get("title")]
          for s in seasons for e in s.get("episodes", [])],
     )
     conn.commit()
@@ -169,6 +182,20 @@ def save_history(conn, episodes):
              watched_at=excluded.watched_at,
              fully_watched=excluded.fully_watched""",
         [{**e, "fully_watched": int(e["fully_watched"])} for e in episodes],
+    )
+    conn.commit()
+
+
+def get_anilist(conn, series_id):
+    return conn.execute("SELECT * FROM anilist WHERE series_id = ?", [series_id]).fetchone()
+
+
+def save_anilist(conn, series_id, anilist_id, data):
+    conn.execute(
+        """INSERT INTO anilist (series_id, anilist_id, data, fetched_at) VALUES (?, ?, ?, ?)
+           ON CONFLICT(series_id) DO UPDATE SET anilist_id=excluded.anilist_id,
+             data=excluded.data, fetched_at=excluded.fetched_at""",
+        [series_id, anilist_id, data, agora()],
     )
     conn.commit()
 

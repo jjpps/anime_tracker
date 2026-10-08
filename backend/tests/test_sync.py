@@ -52,7 +52,8 @@ def episodio(episode_id, series_id, quando, numero=1.0):
 
 TEMPORADAS = {"A": [{"season_id": "A1", "season_number": 1, "season_title": "S1",
                      "total_episodes": 12,
-                     "episodes": [{"episode_number": 1.0, "released_at": "2024-01-01T00:00:00Z"}]}]}
+                     "episodes": [{"episode_number": 1.0, "released_at": "2024-01-01T00:00:00Z",
+                                 "episode_id": "ep1", "title": "t"}]}]}
 
 
 def cr_padrao(**kw):

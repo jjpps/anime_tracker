@@ -11,7 +11,7 @@ import threading
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from . import db, novidades, sync
+from . import anilist, db, novidades, sync
 from .crunchyroll import Crunchyroll, CrunchyrollError
 from .config import load_env
 
@@ -105,6 +105,24 @@ def create_app(db_path=None):
     def lista_largados():
         with conn() as c:
             return jsonify(db.largados(c))
+
+    @app.get("/api/anime/<series_id>")
+    def anime(series_id):
+        """Detalhe: dados da CR sempre; AniList quando responde (docs/adr/0002)."""
+        with conn() as c:
+            serie = c.execute("SELECT series_id, title, poster FROM series WHERE series_id = ?",
+                              [series_id]).fetchone()
+            if not serie:
+                return jsonify({"erro": "série não encontrada"}), 404
+            largado = bool(c.execute("SELECT 1 FROM dropped WHERE series_id = ?",
+                                     [series_id]).fetchone())
+            try:
+                media, erro = anilist.detalhe(c, series_id, serie["title"]), False
+            except anilist.AniListErro:
+                media, erro = None, True
+            return jsonify({**dict(serie), "largado": largado, "anilist": media,
+                            "anilist_erro": erro,
+                            "pendentes": novidades.pendentes(c, series_id)})
 
     @app.put("/api/largados/<series_id>")
     def largar(series_id):

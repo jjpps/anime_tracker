@@ -1,13 +1,15 @@
-import { Component, computed, input } from '@angular/core';
+import { Component, input } from '@angular/core';
+import { RouterLink } from '@angular/router';
 
-/** Card de um anime: pôster e título levam à série na CR; o resto vem de quem usa. */
+/** Card de um anime: pôster e título levam ao detalhe; o resto vem de quem usa. */
 @Component({
   selector: 'app-anime-card',
   standalone: true,
+  imports: [RouterLink],
   template: `
     <div class="card h-100 anime">
       <!-- fora da ordem de tab: o título abaixo é o mesmo link -->
-      <a [href]="url()" target="_blank" rel="noopener" tabindex="-1" aria-hidden="true">
+      <a [routerLink]="['/anime', seriesId()]" tabindex="-1" aria-hidden="true">
         @if (poster()) {
           <img class="card-img-top poster" [src]="poster()" alt="" loading="lazy">
         } @else {
@@ -16,8 +18,8 @@ import { Component, computed, input } from '@angular/core';
       </a>
       <div class="card-body p-2">
         <h2 class="h6 card-title mb-2">
-          <a class="link-body-emphasis text-decoration-none" [href]="url()"
-             target="_blank" rel="noopener">{{ title() }}</a>
+          <a class="link-body-emphasis text-decoration-none"
+             [routerLink]="['/anime', seriesId()]">{{ title() }}</a>
         </h2>
         <ng-content />
       </div>
@@ -48,6 +50,4 @@ export class AnimeCard {
   seriesId = input.required<string>();
   title = input.required<string>();
   poster = input<string | null>(null);
-
-  url = computed(() => `https://www.crunchyroll.com/series/${this.seriesId()}`);
 }

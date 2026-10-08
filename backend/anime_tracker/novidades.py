@@ -9,7 +9,7 @@ número, então agrupar por ele junta dublado e legendado numa coisa só.
 
 import re
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 
 # ponytail: a CR não marca o que é extra, então vai pelo título. Se errar
 # demais, entra um botão "é extra / não é extra" por temporada.
@@ -105,3 +105,42 @@ def _depois(a, b):
         return False
     return datetime.fromisoformat(a.replace("Z", "+00:00")) > datetime.fromisoformat(
         b.replace("Z", "+00:00"))
+
+
+def pendentes(conn, series_id):
+    """Episódios pendentes por Temporada principal, só as que têm algum.
+
+    Dublado e legendado repetem o número do episódio: vale um só, preferindo
+    o legendado. Episódio que ainda não chegou na CR não está disponível."""
+    vistos = {(r["season_number"], r["episode_number"]) for r in conn.execute(
+        """SELECT season_number, episode_number FROM watch_history
+            WHERE series_id = ? AND fully_watched = 1""", [series_id])}
+    agora = datetime.now(timezone.utc)
+
+    por_numero = defaultdict(lambda: {"titulos": [], "eps": {}})
+    for r in conn.execute(
+        """SELECT s.season_number, s.title AS temporada, e.episode_number, e.episode_id,
+                  e.title, e.released_at
+             FROM episodes e JOIN seasons s USING (season_id) WHERE s.series_id = ?""",
+        [series_id],
+    ):
+        if r["released_at"] and _depois(r["released_at"], agora.isoformat()):
+            continue
+        t = por_numero[r["season_number"]]
+        t["titulos"].append(r["temporada"] or "")
+        dub = bool(AUDIO.search(r["temporada"] or ""))
+        atual = t["eps"].get(r["episode_number"])
+        if atual is None or (atual["dub"] and not dub):
+            t["eps"][r["episode_number"]] = {"number": r["episode_number"], "id": r["episode_id"],
+                                             "title": r["title"], "dub": dub}
+
+    saida = []
+    for n in sorted(por_numero):
+        t = por_numero[n]
+        if e_extra(n, t["titulos"]):
+            continue
+        eps = [{k: v for k, v in e.items() if k != "dub"}
+               for _, e in sorted(t["eps"].items()) if (n, e["number"]) not in vistos]
+        if eps:
+            saida.append({"title": _titulo(t["titulos"]), "episodes": eps})
+    return saida
